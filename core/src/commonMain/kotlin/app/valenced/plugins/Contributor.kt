@@ -36,7 +36,9 @@ internal data class ContributorObject(
     }
 }
 
-/** Accepts a [ContributorObject] or a legacy contributor string, always decoding to the string form. */
+/** Contributor field: a [ContributorObject] or a legacy string, always decoded to the string form. */
+typealias Contributor = @Serializable(with = ContributorSerializer::class) String
+
 object ContributorSerializer : KSerializer<String> {
     override val descriptor = PrimitiveSerialDescriptor("app.valenced.plugins.Contributor", PrimitiveKind.STRING)
 

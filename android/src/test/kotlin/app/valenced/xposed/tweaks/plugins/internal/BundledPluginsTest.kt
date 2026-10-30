@@ -112,7 +112,7 @@ class BundledPluginsTest {
                   "id": "valenced.settings.themes",
                   "name": "Theme Settings",
                   "description": "Manage your themes.",
-                  "author": "Valenced",
+                  "author": { "name": "Valenced" },
                   "icon": "PaintPaletteIcon",
                   "defaultSource": { "repo": "https://example.com" }
                 }

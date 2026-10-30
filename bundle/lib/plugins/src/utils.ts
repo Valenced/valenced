@@ -37,13 +37,11 @@ export function formatPluginContributor(
     if (typeof contributor === 'string') return contributor
 
     const { name, id, links = [] } = contributor
-    return [
-        name.trim(),
-        ...(id === undefined ? [] : [`<${id}>`]),
-        ...links.map(({ url, title }) =>
-            title === undefined ? `(${url})` : `(${url} "${title}")`,
-        ),
-    ].join(' ')
+    let formatted = name.trim()
+    if (id !== undefined) formatted += ` <${id}>`
+    for (const { url, title } of links)
+        formatted += title === undefined ? ` (${url})` : ` (${url} "${title}")`
+    return formatted
 }
 
 const ContributorEntryRegex =
