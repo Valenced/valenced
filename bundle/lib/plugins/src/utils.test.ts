@@ -77,7 +77,7 @@ describe('formatPluginContributor', () => {
     test('formats objects into a parseable string', () => {
         const formatted = formatPluginContributor({
             name: 'Jane Doe',
-            ids: [Id1, Id2],
+            id: Id1,
             links: [
                 { url: 'https://example.com/jane', title: 'Website' },
                 { url: 'mailto:jane@example.com' },
@@ -85,11 +85,11 @@ describe('formatPluginContributor', () => {
         })
 
         expect(formatted).toBe(
-            `Jane Doe <${Id1}> <${Id2}> (https://example.com/jane "Website") (mailto:jane@example.com)`,
+            `Jane Doe <${Id1}> (https://example.com/jane "Website") (mailto:jane@example.com)`,
         )
         expect(parsePluginContributor(formatted)).toEqual({
             name: 'Jane Doe',
-            ids: [Id1, Id2],
+            ids: [Id1],
             links: [
                 { url: 'https://example.com/jane', label: 'Website' },
                 { url: 'mailto:jane@example.com', label: undefined },

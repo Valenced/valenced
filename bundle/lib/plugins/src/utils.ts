@@ -25,8 +25,8 @@ export interface PluginContributorLink {
  */
 export interface PluginContributorInput {
     name: string
-    /** Discord user IDs. */
-    ids?: string[]
+    /** Discord user ID. */
+    id?: string
     links?: { url: string; title?: string }[]
 }
 
@@ -36,10 +36,10 @@ export function formatPluginContributor(
 ): string {
     if (typeof contributor === 'string') return contributor
 
-    const { name, ids = [], links = [] } = contributor
+    const { name, id, links = [] } = contributor
     return [
         name.trim(),
-        ...ids.map(id => `<${id}>`),
+        ...(id === undefined ? [] : [`<${id}>`]),
         ...links.map(({ url, title }) =>
             title === undefined ? `(${url})` : `(${url} "${title}")`,
         ),

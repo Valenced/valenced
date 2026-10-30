@@ -10,7 +10,7 @@ import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * Contributor as written in manifests: `{ "name": "...", "ids"?: ["<DISCORD_ID>"], "links"?: [{ "url": "...", "title"?: "..." }] }`.
+ * Contributor as written in manifests: `{ "name": "...", "id"?: "<DISCORD_ID>", "links"?: [{ "url": "...", "title"?: "..." }] }`.
  * Preferred over the legacy `Name <DISCORD_ID> (LINK "TITLE")` string, which is still accepted.
  *
  * Decoded into the string form of [PluginManifest.author].
@@ -18,8 +18,8 @@ import kotlinx.serialization.json.JsonPrimitive
 @Serializable
 internal data class ContributorObject(
     val name: String,
-    /** Discord user IDs. */
-    val ids: List<String> = emptyList(),
+    /** Discord user ID. */
+    val id: String? = null,
     val links: List<Link> = emptyList(),
 ) {
     @Serializable
@@ -27,7 +27,7 @@ internal data class ContributorObject(
 
     fun format() = buildString {
         append(name.trim())
-        for (id in ids) append(" <").append(id).append('>')
+        if (id != null) append(" <").append(id).append('>')
         for ((url, title) in links) {
             append(" (").append(url)
             if (title != null) append(" \"").append(title).append('"')

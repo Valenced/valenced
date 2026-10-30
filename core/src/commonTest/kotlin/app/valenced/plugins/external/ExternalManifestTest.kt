@@ -71,10 +71,10 @@ class ExternalManifestTest {
                 "format": 1, "id": "a.b", "name": "A", "version": "1.0.0",
                 "author": {
                     "name": "Jane",
-                    "ids": ["123456789012345678"],
+                    "id": "123456789012345678",
                     "links": [{ "url": "https://example.com", "title": "Website" }, { "url": "mailto:jane@example.com" }]
                 },
-                "contributors": ["John <876543210987654321>", { "name": "Bob" }]
+                "contributors": ["John <876543210987654321>", { "name": "Bob", "id": "112233445566778899" }]
             }
             """,
         )
@@ -83,6 +83,6 @@ class ExternalManifestTest {
             "Jane <123456789012345678> (https://example.com \"Website\") (mailto:jane@example.com)",
             parsed.author,
         )
-        assertEquals(listOf("John <876543210987654321>", "Bob"), parsed.contributors)
+        assertEquals(listOf("John <876543210987654321>", "Bob <112233445566778899>"), parsed.contributors)
     }
 }
