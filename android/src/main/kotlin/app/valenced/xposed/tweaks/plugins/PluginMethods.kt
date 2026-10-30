@@ -86,6 +86,7 @@ val pluginMethods by tweak {
         requireValidPluginId(pluginId)
 
         // Delete data from all slots.
+        File(pluginPaths(appInfo.dataDir).backups.toFile(), pluginId).deleteRecursively()
         File(externalPluginsRoot(appInfo.dataDir), pluginId).deleteRecursively()
         for (dir in pluginStorageDirsOfAllSlots(appInfo.dataDir, pluginId)) dir.deleteRecursively()
         PluginStatesStore.removePluginFromAllSlots(pluginPaths(appInfo.dataDir), pluginId)

@@ -141,12 +141,8 @@ private fun BufferedSink.writeCapped(source: Source, budget: Long): Long {
  *
  * The running session keeps running the code it already loaded. The new files take effect next boot.
  */
-fun applyStagedPlugin(paths: PluginPaths, staged: StagedPlugin): Path {
-    val dest = paths.dist / staged.manifest.id
-    paths.fs.deleteRecursively(dest, mustExist = false)
-    paths.fs.atomicMove(staged.dir, dest)
-    return dest
-}
+fun applyStagedPlugin(paths: PluginPaths, staged: StagedPlugin): Path =
+    replaceInstalledPlugin(paths, staged.dir, staged.manifest.id)
 
 /** Deletes a staged directory that will never be applied. */
 fun discardStagedPlugin(paths: PluginPaths, staged: StagedPlugin) {

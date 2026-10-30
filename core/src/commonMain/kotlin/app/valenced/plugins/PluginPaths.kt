@@ -12,6 +12,7 @@ import okio.Path
  * ```
  * files/valenced/plugins/
  *   dist/<id>/          installed plugin files
+ *   backups/<id>/       previous version while an update is committed
  *   storage/<slot>/<id> per-slot plugin storage
  *   states/             slot pointers and slot files
  *   repos/              repos.json, sources.json and the index caches
@@ -29,6 +30,8 @@ class PluginPaths(
 
     /** Installed plugin directories, one per plugin ID. */
     val dist: Path = root / "dist"
+
+    val backups: Path = root / "backups"
 
     /** Parent of the per-slot storage roots. */
     val storage: Path = root / "storage"

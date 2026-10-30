@@ -8,6 +8,7 @@ import app.valenced.plugins.external.DiscoveryFailure
 import app.valenced.plugins.external.ExternalManifest
 import app.valenced.plugins.external.MANIFEST_FILE
 import app.valenced.plugins.external.ParsedPlugin
+import app.valenced.plugins.external.restoreInterruptedReplacements
 import app.valenced.plugins.external.sessionSkip
 import app.valenced.plugins.pluginLog
 import app.valenced.xposed.tweaks.plugins.*
@@ -33,6 +34,9 @@ internal fun discoverExternalPlugins(
     internalManifests: Map<String, PluginManifest>,
 ): ExternalDiscovery {
     val failures = mutableMapOf<String, DiscoveryFailure>()
+    runCatching { restoreInterruptedReplacements(pluginPaths(dataDir)) }
+        .onFailure { pluginLog.e("Failed to restore interrupted plugin updates", it) }
+
     val root = externalPluginsRoot(dataDir)
     if (!root.isDirectory) return ExternalDiscovery(emptyList(), failures)
 
