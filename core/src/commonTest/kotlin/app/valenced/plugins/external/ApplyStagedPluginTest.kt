@@ -146,7 +146,7 @@ class ApplyStagedPluginTest {
         assertEquals(backup.toString(), error.details?.get("backupPath")?.jsonPrimitive?.content)
         assertEquals((paths.dist / "com.example.a").toString(), error.details?.get("pluginPath")?.jsonPrimitive?.content)
         assertEquals("old", fs.readUtf8OrNull(backup / "index.js"))
-        assertTrue(error.cause?.suppressed?.isNotEmpty() == true)
+        assertTrue(error.cause?.suppressedExceptions?.isNotEmpty() == true)
     }
 
     @Test
