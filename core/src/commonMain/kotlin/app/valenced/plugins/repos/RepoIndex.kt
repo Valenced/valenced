@@ -2,7 +2,6 @@ package app.valenced.plugins.repos
 
 import app.valenced.core.Logger
 import app.valenced.core.ValencedJson
-import app.valenced.plugins.Contributor
 import app.valenced.plugins.Version
 import app.valenced.plugins.VersionRange
 import app.valenced.plugins.external.ExternalDependency
@@ -30,8 +29,8 @@ data class RepoIndex(
 data class RepoPlugin(
     val name: String,
     val description: String = "",
-    val author: Contributor = "",
-    val contributors: List<Contributor> = emptyList(),
+    val author: String = "",
+    val contributors: List<String> = emptyList(),
     /** A Discord asset name or a `data:` URL. */
     val icon: String? = null,
     /**

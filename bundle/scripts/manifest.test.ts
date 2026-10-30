@@ -105,6 +105,21 @@ describe('getInternalPluginManifests', () => {
         })
     })
 
+    it('formats stub contributor objects into strings for native', async () => {
+        await plugin('start', 'settings.themes', {
+            id: 'valenced.settings.themes',
+            author: { name: 'Jane', id: '123456789012345678' },
+            contributors: ['John', { name: 'Bob' }],
+            defaultSource: { repo: 'https://example.com' },
+        })
+
+        const [stub] = await getInternalPluginManifests(root)
+        expect(stub).toMatchObject({
+            author: 'Jane <123456789012345678>',
+            contributors: ['John', 'Bob'],
+        })
+    })
+
     it('rejects a version on a plugin that is not a stub', async () => {
         await plugin('start', 'settings', {
             id: 'valenced.settings',

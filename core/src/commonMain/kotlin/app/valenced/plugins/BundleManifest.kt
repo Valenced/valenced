@@ -26,8 +26,8 @@ data class BundleManifest(
         // Metadata for stubs only.
         val name: String? = null,
         val description: String? = null,
-        val author: Contributor? = null,
-        val contributors: List<Contributor> = emptyList(),
+        val author: String? = null,
+        val contributors: List<String> = emptyList(),
         val icon: String? = null,
         val defaultSource: PluginSource? = null,
     )

@@ -2,6 +2,7 @@ import { readdir, readFile } from 'fs/promises'
 import { dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { ReservedDependencyIds } from '../lib/plugins/src/_internal/manifest'
+import { formatPluginContributor } from '../lib/plugins/src/utils'
 import { exists, stringEnv } from './_shared'
 import type { InternalPluginManifest } from '@valenced/plugins/_'
 
@@ -20,8 +21,8 @@ interface BundleManifestPlugin {
     // Metadata, stubs only. Native shows a restored stub before JS can fill these in.
     name?: string
     description?: string
-    author?: InternalPluginManifest['author']
-    contributors?: InternalPluginManifest['contributors']
+    author?: string
+    contributors?: string[]
     icon?: string
     defaultSource?: {
         repo: string
@@ -31,8 +32,14 @@ interface BundleManifestPlugin {
 }
 
 interface RawBundleManifestPlugin
-    extends Omit<BundleManifestPlugin, 'enabledByDefault' | 'defaultSource'>,
-        Pick<InternalPluginManifest, 'enabledByDefault' | 'defaultSource'> {
+    extends Omit<
+            BundleManifestPlugin,
+            'enabledByDefault' | 'defaultSource' | 'author' | 'contributors'
+        >,
+        Pick<
+            InternalPluginManifest,
+            'enabledByDefault' | 'defaultSource' | 'author' | 'contributors'
+        > {
     build?: {
         devOnly?: boolean
     }
@@ -114,8 +121,12 @@ export async function getInternalPluginManifests(
                 ...(defaultSource && {
                     name: manifest.name,
                     description: manifest.description,
-                    author: manifest.author,
-                    contributors: manifest.contributors,
+                    author:
+                        manifest.author &&
+                        formatPluginContributor(manifest.author),
+                    contributors: manifest.contributors?.map(
+                        formatPluginContributor,
+                    ),
                     icon: manifest.icon,
                 }),
                 ...(manifest.essential && { essential: true }),
