@@ -2,7 +2,10 @@
   "id": "valenced.user-badges",
   "name": "User Badges",
   "description": "Badges for Valenced contributors and sponsors.",
-  "author": { "name": "Valenced" },
+  "author": {
+    "name": "Valenced",
+    "links": [{ "url": "https://discord.com/invite/dtBTQHYSx4", "title": "Support Server" }]
+  },
   "icon": "ShieldUserIcon",
   "essential": true
 }

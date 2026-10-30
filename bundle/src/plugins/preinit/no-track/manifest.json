@@ -2,7 +2,10 @@
   "id": "valenced.no-track",
   "name": "No Track",
   "description": "Disables Discord and Sentry analytics.",
-  "author": { "name": "Valenced" },
+  "author": {
+    "name": "Valenced",
+    "links": [{ "url": "https://discord.com/invite/dtBTQHYSx4", "title": "Support Server" }]
+  },
   "icon": "AnalyticsIcon",
   "enabledByDefault": true
 }

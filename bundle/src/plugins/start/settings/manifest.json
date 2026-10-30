@@ -2,7 +2,10 @@
   "id": "valenced.settings",
   "name": "Settings",
   "description": "Settings UI for Valenced.",
-  "author": { "name": "Valenced" },
+  "author": {
+    "name": "Valenced",
+    "links": [{ "url": "https://discord.com/invite/dtBTQHYSx4", "title": "Support Server" }]
+  },
   "icon": "SettingsIcon",
   "essential": true
 }

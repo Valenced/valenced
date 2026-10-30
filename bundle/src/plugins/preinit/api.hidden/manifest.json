@@ -2,7 +2,10 @@
   "id": "valenced.api.hidden",
   "name": "Developer Mode",
   "description": "Exposes internal Valenced APIs for debugging.",
-  "author": { "name": "Valenced" },
+  "author": {
+    "name": "Valenced",
+    "links": [{ "url": "https://discord.com/invite/dtBTQHYSx4", "title": "Support Server" }]
+  },
   "icon": "WrenchIcon",
   "enabledByDefault": "dev"
 }

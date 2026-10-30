@@ -2,7 +2,10 @@
   "id": "valenced.settings.themes",
   "name": "Themes",
   "description": "This feature requires an update to be installed.",
-  "author": { "name": "Valenced" },
+  "author": {
+    "name": "Valenced",
+    "links": [{ "url": "https://discord.com/invite/dtBTQHYSx4", "title": "Support Server" }]
+  },
   "icon": "PaintPaletteIcon",
   "version": "0.0.0",
   "enabledByDefault": true,
