@@ -1,5 +1,6 @@
 package app.valenced.plugins.external
 
+import app.valenced.core.ValencedJson
 import app.valenced.plugins.API_DEPENDENCY_ID
 import app.valenced.plugins.DISCORD_DEPENDENCY_ID
 import kotlin.test.Test
@@ -60,5 +61,28 @@ class ExternalManifestTest {
         assertEquals("data:image/png;base64,AA", manifest(icon = "data:image/png;base64,AA").toPluginManifest().icon)
         assertNull(manifest(icon = "https://example.test/icon.png").toPluginManifest().icon)
         assertNull(manifest(icon = "data:image/png;base64," + "A".repeat(128 * 1024)).toPluginManifest().icon)
+    }
+
+    @Test
+    fun `contributors are strings or objects`() {
+        val parsed = ValencedJson.decodeFromString<ExternalManifest>(
+            """
+            {
+                "format": 1, "id": "a.b", "name": "A", "version": "1.0.0",
+                "author": {
+                    "name": "Jane",
+                    "ids": ["123456789012345678"],
+                    "links": [{ "url": "https://example.com", "title": "Website" }, { "url": "mailto:jane@example.com" }]
+                },
+                "contributors": ["John <876543210987654321>", { "name": "Bob" }]
+            }
+            """,
+        )
+
+        assertEquals(
+            "Jane <123456789012345678> (https://example.com \"Website\") (mailto:jane@example.com)",
+            parsed.author,
+        )
+        assertEquals(listOf("John <876543210987654321>", "Bob"), parsed.contributors)
     }
 }

@@ -2,7 +2,7 @@
   "id": "valenced.api",
   "name": "Plugin API",
   "description": "Provides the Valenced plugin API.",
-  "author": "Valenced",
+  "author": { "name": "Valenced" },
   "icon": "PollsIcon",
   "essential": true,
   "api": true

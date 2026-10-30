@@ -2,7 +2,7 @@
   "id": "valenced.user-badges",
   "name": "User Badges",
   "description": "Badges for Valenced contributors and sponsors.",
-  "author": "Valenced",
+  "author": { "name": "Valenced" },
   "icon": "ShieldUserIcon",
   "essential": true
 }

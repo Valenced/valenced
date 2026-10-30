@@ -2,7 +2,7 @@
   "id": "valenced.recovery",
   "name": "Recovery",
   "description": "Handles errors and provides troubleshooting options for Valenced.",
-  "author": "Valenced",
+  "author": { "name": "Valenced" },
   "icon": "ShieldIcon",
   "essential": true,
   "dependencies": {

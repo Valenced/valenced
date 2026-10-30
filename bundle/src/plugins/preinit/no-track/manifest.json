@@ -2,7 +2,7 @@
   "id": "valenced.no-track",
   "name": "No Track",
   "description": "Disables Discord and Sentry analytics.",
-  "author": "Valenced",
+  "author": { "name": "Valenced" },
   "icon": "AnalyticsIcon",
   "enabledByDefault": true
 }

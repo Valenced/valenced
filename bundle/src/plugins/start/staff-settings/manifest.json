@@ -2,7 +2,7 @@
   "id": "valenced.staff-settings",
   "name": "Staff Settings",
   "description": "Allows accessing Discord's Staff Settings.",
-  "author": "Valenced",
+  "author": { "name": "Valenced" },
   "icon": "StaffBadgeIcon",
   "enabledByDefault": true
 }

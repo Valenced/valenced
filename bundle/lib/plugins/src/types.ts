@@ -140,6 +140,7 @@ export interface PluginManifest {
     /**
      * Author information, as `Name <DISCORD_ID> (LINK "LABEL")`.
      * Discord IDs and links are optional and repeatable.
+     * `manifest.json` should use the object form ({@link PluginContributorInput}) instead, normalized into this string.
      *
      * Use {@link getPluginContributorName} and {@link parsePluginContributor} to extract the name, IDs, and links.
      */

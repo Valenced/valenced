@@ -1,4 +1,5 @@
 import type { PluginManifest, PluginVersion } from '../types'
+import { formatPluginContributor } from '../utils'
 import type { InternalPluginManifest } from './types'
 
 /** Manifest schema version internal plugins are written against. */
@@ -39,6 +40,8 @@ export function completeInternalManifest(
             ? parseBundleVersion(manifest.version)
             : (manifest.version ?? version)
     manifest.format ??= ManifestFormat
+    manifest.author = formatPluginContributor(manifest.author)
+    manifest.contributors = manifest.contributors?.map(formatPluginContributor)
 
     if (!isReservedDependency(manifest.id)) {
         manifest.dependencies ??= {}

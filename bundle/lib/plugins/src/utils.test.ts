@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { getPluginContributorName, parsePluginContributor } from './utils'
+import {
+    formatPluginContributor,
+    getPluginContributorName,
+    parsePluginContributor,
+} from './utils'
 
 const Id1 = '123456789012345678'
 const Id2 = '876543210987654321'
@@ -62,5 +66,38 @@ describe('getPluginContributorName', () => {
 
     test('returns the raw string when unparseable', () => {
         expect(getPluginContributorName('Jane (Doe)')).toBe('Jane (Doe)')
+    })
+})
+
+describe('formatPluginContributor', () => {
+    test('passes strings through', () => {
+        expect(formatPluginContributor(`Jane <${Id1}>`)).toBe(`Jane <${Id1}>`)
+    })
+
+    test('formats objects into a parseable string', () => {
+        const formatted = formatPluginContributor({
+            name: 'Jane Doe',
+            ids: [Id1, Id2],
+            links: [
+                { url: 'https://example.com/jane', title: 'Website' },
+                { url: 'mailto:jane@example.com' },
+            ],
+        })
+
+        expect(formatted).toBe(
+            `Jane Doe <${Id1}> <${Id2}> (https://example.com/jane "Website") (mailto:jane@example.com)`,
+        )
+        expect(parsePluginContributor(formatted)).toEqual({
+            name: 'Jane Doe',
+            ids: [Id1, Id2],
+            links: [
+                { url: 'https://example.com/jane', label: 'Website' },
+                { url: 'mailto:jane@example.com', label: undefined },
+            ],
+        })
+    })
+
+    test('formats a name only', () => {
+        expect(formatPluginContributor({ name: 'Valenced' })).toBe('Valenced')
     })
 })

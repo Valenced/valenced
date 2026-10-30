@@ -2,7 +2,7 @@
   "id": "valenced.logging",
   "name": "Logging",
   "description": "Logs assisting Valenced developers.",
-  "author": "Valenced",
+  "author": { "name": "Valenced" },
   "icon": "PaperIcon",
   "enabledByDefault": true,
   "build": {

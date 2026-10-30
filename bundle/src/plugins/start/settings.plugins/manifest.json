@@ -2,7 +2,7 @@
   "id": "valenced.settings.plugins",
   "name": "Plugin Settings",
   "description": "Plugin management UI for Valenced.",
-  "author": "Valenced",
+  "author": { "name": "Valenced" },
   "icon": "PuzzlePieceIcon",
   "essential": true,
   "dependencies": {

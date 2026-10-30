@@ -1,5 +1,6 @@
 package app.valenced.plugins.external
 
+import app.valenced.plugins.ContributorSerializer
 import app.valenced.plugins.PluginDependency
 import app.valenced.plugins.PluginManifest
 import app.valenced.plugins.RESERVED_DEPENDENCY_IDS
@@ -19,8 +20,9 @@ data class ExternalManifest(
     val id: String,
     val name: String,
     val description: String = "",
-    val author: String = "",
-    val contributors: List<String> = emptyList(),
+    /** Contributor object, or legacy string. See [ContributorSerializer]. */
+    @Serializable(with = ContributorSerializer::class) val author: String = "",
+    val contributors: List<@Serializable(with = ContributorSerializer::class) String> = emptyList(),
     /* See [validatedPluginIcon]. */
     val icon: String? = null,
     /** The plugin's version. */

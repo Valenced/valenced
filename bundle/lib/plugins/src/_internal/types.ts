@@ -5,6 +5,7 @@ import type {
     PluginOptions,
     PluginOptionsFactory,
 } from '../types'
+import type { PluginContributorInput } from '../utils'
 import type { PluginSystemErrorPayload } from './errors'
 import type { addPluginFlags, adoptPluginFlags } from './state'
 
@@ -12,9 +13,12 @@ export type AnyPlugin = Plugin<any, any>
 
 export type InternalPluginManifest = Omit<
     PluginManifest,
-    'version' | 'format' | 'dependencies'
+    'version' | 'format' | 'dependencies' | 'author' | 'contributors'
 > &
     Partial<Pick<PluginManifest, 'format' | 'dependencies'>> & {
+        /** Contributor object, or legacy string. Normalized to the string form. */
+        author: PluginContributorInput | string
+        contributors?: (PluginContributorInput | string)[]
         /**
          * Plugin version. Defaults to the bundle version.
          * Only stubs (see {@link InternalPluginManifestExtras.defaultSource}) may set it in `manifest.json`, as a string like `1.0.0`.

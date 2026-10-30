@@ -2,7 +2,7 @@
   "id": "valenced.settings",
   "name": "Settings",
   "description": "Settings UI for Valenced.",
-  "author": "Valenced",
+  "author": { "name": "Valenced" },
   "icon": "SettingsIcon",
   "essential": true
 }

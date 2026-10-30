@@ -2,7 +2,7 @@
   "id": "valenced.api.themes",
   "name": "Themes API",
   "description": "This feature requires an update to be installed.",
-  "author": "Valenced",
+  "author": { "name": "Valenced" },
   "icon": "PaintPaletteIcon",
   "version": "0.0.0",
   "enabledByDefault": true,
