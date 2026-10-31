@@ -32,8 +32,8 @@ export type GetModulesUnsubscribeFunction = () => void
 
 /**
  * Get modules matching the filter.
- * If the matching modules are already initialized, the callback will be called immediately.
- * Otherwise, it will be called when the matching modules are initialized.
+ * If the matching modules are already initialized, the callback will be called after an event loop to ensure the unsubscribe function is returned first.
+ * Otherwise, it will be called synchronously when the matching modules are initialized.
  *
  * @param filter The filter to use to find the module.
  * @param options The options to use for the find.
@@ -41,8 +41,9 @@ export type GetModulesUnsubscribeFunction = () => void
  *
  * @example
  * ```ts
- * getModules(withProps<typeof import('react')>('createElement'), React => {
- *   // Immediately called because React is always initialized when plugins are loaded
+ * getModules(withProps<typeof import('react-native')>('AppRegistry'), React => {
+ *   // Called after an event loop because React Native is always initialized when plugins are loaded
+ *   // Already initialized modules will call the callback after an event loop, so that the unsubscribe function can be returned first.
  * })
  *
  * getModules(withProps<typeof import('@shopify/flash-list')>('FlashList'), FlashList => {
@@ -51,7 +52,7 @@ export type GetModulesUnsubscribeFunction = () => void
  *
  * // Get multiple modules matching the filter
  * getModules(withProps<ReactNative.AssetsRegistry>('registerAsset'), AssetsRegistry => {
- *   // Called 2 times, once for each module that matches the filter
+ *   // Called maximum 2 times, once for each module that matches the filter
  * }, { max: 2 })
  * ```
  */
