@@ -1,6 +1,6 @@
 import { onModuleInitialized } from '@valenced/modules/metro/subscriptions'
 import { isModuleInitialized } from '@valenced/modules/metro/utils'
-import { asap, noop } from '@valenced/utils/callback'
+import { asap } from '@valenced/utils/callback'
 import { migrateSkipDefaultOption } from './_compat'
 import { FilterScopes } from './filters'
 import { lookupModule, lookupModules } from './lookup'
@@ -78,44 +78,60 @@ export function getModules(
     // Only lookup modules that are already initialized
     const lookupFilter = filter.scope(FilterScopes.Initialized)
 
+    let canceled = false
+
     function handleModule(
         exports: Metro.ModuleExports | undefined,
         id: Metro.ModuleID,
     ) {
         if (isModuleInitialized(id)) {
-            // Run callback at the end of the event loop. This ensures that the noop is returned first.
+            // Run callback at the end of the event loop. This ensures that the `cancel` is returned first.
             // Module is already initialized, there is likely no harm calling the callback late.
             asap(() => {
+                if (canceled) return
                 callback(exports, id)
             })
         } else {
             // Module is not initialized, wait for it to be initialized before calling the callback.
+            // This happens when `{ initialize: false }` is passed to `options`
             onModuleInitialized(id, (_, exports) => {
+                if (canceled) return
                 callback(exports, id)
             })
         }
+    }
+
+    const cancel = () => {
+        canceled = true
+        unsub?.()
     }
 
     if (max === 1) {
         const [exports, id] = lookupModule(lookupFilter, options!)
         if (id !== undefined) {
             handleModule(exports, id)
-            return noop
+            return cancel
         }
     } else
         for (const [exports, id] of lookupModules(lookupFilter, options!)) {
             handleModule(exports, id)
-            if (!--max) return noop
+            if (!--max) return cancel
         }
 
-    const unsub = waitForModules(
+    // Needs to be lexically accessible
+    var unsub = waitForModules(
         filter,
         (exports, id) => {
-            if (!--max) unsub()
+            if (canceled) {
+                unsub()
+                return
+            }
+
+            if (!--max) cancel()
             callback(exports, id)
         },
         options!,
     )
 
-    return unsub
+    return cancel
 }
