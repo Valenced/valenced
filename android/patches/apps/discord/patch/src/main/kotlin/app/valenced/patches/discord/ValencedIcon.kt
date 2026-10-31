@@ -6,7 +6,7 @@ package app.valenced.patches.discord
 import app.reseam.patch.patch
 import java.io.File
 
-/** Discord's launcher icons, both adaptive icons over a channel colour. */
+/** Discord's launcher icons, both adaptive icons over a channel color. */
 private val LAUNCHER_ICONS = listOf(
     "ic_logo_square", "ic_logo_round",
     "ic_logo_square_beta", "ic_logo_round_beta",
@@ -17,8 +17,10 @@ private const val BACKGROUND = "valenced_icon_background"
 private const val FOREGROUND = "valenced_icon_foreground"
 private const val CUSTOM = "valenced_icon_custom"
 
+private val RGB = Regex("#[0-9A-Fa-f]{6}")
+
 val valencedIcon = patch("Valenced icon") {
-    description("Puts Discord's launcher icon on Valenced's cyan, or replaces it with an image.")
+    description("Puts Discord's launcher icon on a color, Valenced's cyan by default, or replaces it with an image.")
     compatibleWith(DISCORD)
 
     val iconOption = pathOption(
@@ -27,14 +29,28 @@ val valencedIcon = patch("Valenced icon") {
         description = "The image to use as the launcher icon.",
     )
 
+    val backgroundOption = stringOption(
+        "background",
+        title = "Background color",
+        description = "The color behind Discord's logo, such as #37EBFF.",
+        default = "#37EBFF",
+    )
+
+    val foregroundOption = stringOption(
+        "foreground",
+        title = "Logo color",
+        description = "The color of Discord's logo, such as #000000.",
+        default = "#000000",
+    )
+
     execute {
         val custom = options.getOrNull(iconOption)?.let { File(it.path).readBytes() }
         if (custom != null) {
             resources.addColor(BACKGROUND, "#FF000000")
             resources.addFile("drawable", CUSTOM, "res/$CUSTOM.png", custom)
         } else {
-            resources.addColor(BACKGROUND, "#FF37EBFF")
-            resources.addColor(FOREGROUND, "#FF000000")
+            resources.addColor(BACKGROUND, opaque(options[backgroundOption]))
+            resources.addColor(FOREGROUND, opaque(options[foregroundOption]))
         }
         for (icon in LAUNCHER_ICONS) {
             // Some icons may not exist due to resource shrinking
@@ -65,4 +81,9 @@ val valencedIcon = patch("Valenced icon") {
             }
         }
     }
+}
+
+private fun opaque(rgb: String): String {
+    require(RGB.matches(rgb)) { "$rgb isn't a color like #37EBFF" }
+    return "#FF" + rgb.substring(1)
 }
