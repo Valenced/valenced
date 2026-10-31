@@ -16,7 +16,7 @@ export type GetModulesOptions<ReturnNamespace extends boolean = boolean> =
             /**
              * The maximum number of modules to get.
              *
-             * @default 1
+             * @default Number.POSITIVE_INFINITY
              */
             max?: number
         }
@@ -72,7 +72,7 @@ export function getModules(
     callback: GetModulesCallback<any>,
     options?: GetModulesOptions,
 ) {
-    let max = options?.max ?? 1
+    let max = options?.max ?? Number.POSITIVE_INFINITY
 
     filter = migrateSkipDefaultOption(filter, options)
 
