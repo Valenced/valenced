@@ -70,6 +70,7 @@ registerInternalPlugin(manifest, {
                     }),
                 )
             },
+            { max: 1 },
         )
 
         cleanup(unsub)

@@ -23,7 +23,7 @@ getModules(withProps('fileFinishedImporting'), (exports, id) => {
         mImportedPaths.set(path, id)
         executeImportedPathSubscriptions(id, path)
     }
-})
+}, { max: 1 })
 
 export function executeImportedPathSubscriptions(
     id: Metro.ModuleID,

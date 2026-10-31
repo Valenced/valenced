@@ -63,7 +63,7 @@ registerInternalPlugin(manifest, {
 
                 reset()
                 if (plugin.startedLate) showToast()
-            }),
+            }, { max: 1 }),
         )
     },
 })
