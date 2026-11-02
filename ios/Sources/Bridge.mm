@@ -144,6 +144,7 @@ void RegisterPluginLoaderMethods(void);
 void RegisterRepoMethods(void);
 void RegisterCachesMethods(void);
 void RegisterAdditionalBridgeMethods(void);
+void RegisterThemesBridgeMethods(void);
 }
 
 void RegisterBridgeMethods(void) {
@@ -164,6 +165,7 @@ void RegisterBridgeMethods(void) {
     RegisterCachesMethods();
     RegisterAdditionalBridgeMethods();
     RegisterRecoveryBridgeMethods();
+    RegisterThemesBridgeMethods();
 }
 
 NSDictionary *callBridgeMethodHelper(NSString *methodName, NSArray *args) {

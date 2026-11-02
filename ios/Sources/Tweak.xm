@@ -170,11 +170,14 @@ static NSData *loadShippedBundle(void)
 
 %end
 
+extern "C" void ThemesApplyAtBoot(void);
+
 %ctor
 {
     @autoreleasepool
     {
         %init;
         RegisterBridgeMethods();
+        ThemesApplyAtBoot();
     }
 }
