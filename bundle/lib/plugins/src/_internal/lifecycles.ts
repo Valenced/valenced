@@ -38,6 +38,8 @@ import { getInternalPluginMeta, pList } from './registry'
 import {
     addPluginFlags,
     adoptPluginFlags,
+    adoptSlotFlags,
+    BootSlot,
     isDefaultsOnlyBoot,
     isPluginEnabledInActiveSlot,
     writePluginEnabledState,
@@ -168,7 +170,11 @@ export async function disablePluginInActiveSlot(plugin: AnyPlugin) {
     await writePluginEnabledState(plugin, false, false)
 
     // Native already disabled, so we just adopt it here.
-    adoptPluginFlags(plugin, meta.flags & ~PluginFlags.Enabled)
+    adoptSlotFlags(
+        BootSlot,
+        plugin.manifest.id,
+        meta.flags & ~PluginFlags.Enabled,
+    )
 }
 
 /** Enables plugin in active slot after ensuring required dependencies are enabled. */
