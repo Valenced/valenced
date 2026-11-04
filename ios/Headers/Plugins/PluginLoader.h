@@ -41,6 +41,8 @@ NSString *PluginErrorCodeString(PluginErrorCode code);
 @property (nonatomic, copy, nullable) NSString *sourceRepo;
 @property (nonatomic, copy, nullable) NSString *sourceChannel;
 @property (nonatomic, assign) BOOL hasSource;
+@property (nonatomic, copy, nullable) NSString *defaultSourceRepo;
+@property (nonatomic, copy, nullable) NSString *defaultSourceChannel;
 @property (nonatomic, strong, nullable) PluginErrorInfo *errorInfo;
 @property (nonatomic, copy, nullable) NSArray<PluginErrorInfo *> *errors;
 @property (nonatomic, copy, nullable) NSString *bundlePath;

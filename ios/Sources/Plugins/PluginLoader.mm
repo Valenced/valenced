@@ -33,6 +33,7 @@ static id ParseJSONObjectOrEmpty(NSString *json) {
 @end
 
 static NSString * const kManifestFile = @"manifest.json";
+static NSString * const kShippedManifestFile = @"valenced.manifest.json";
 static NSString * const kReservedIds[] = {@"valenced.api", @"discord"};
 static NSString *const  kConfirmTmpPrefix = @".confirm-";
 // we like super dont need this but its here incase android uses this one day (it definetly wont we will just rewrite it all) (we did infact switch to kmp)
@@ -42,6 +43,90 @@ static inline BOOL isReservedPluginId(NSString *pluginId) {
     for (size_t i = 0; i < sizeof(kReservedIds) / sizeof(kReservedIds[0]); i++)
         if ([kReservedIds[i] isEqualToString:pluginId]) return YES;
     return NO;
+}
+
+static BOOL JSONBoolValue(NSDictionary *dict, NSString *key) {
+    id value = dict[key];
+    return [value isKindOfClass:[NSNumber class]] ? [value boolValue] : NO;
+}
+
+static NSURL *ShippedBundleManifestURL(void) {
+    Dl_info info = {};
+    if (dladdr((const void *)&ShippedBundleManifestURL, &info) && info.dli_fname) {
+        NSString *dir = [[NSString stringWithUTF8String:info.dli_fname] stringByDeletingLastPathComponent];
+        NSURL *url = [NSURL fileURLWithPath:[dir stringByAppendingPathComponent:kShippedManifestFile]];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:url.path]) return url;
+    }
+
+    NSMutableArray<NSBundle *> *bundles = [NSMutableArray array];
+    NSBundle *classBundle = [NSBundle bundleForClass:[PluginLoader class]];
+    if (classBundle) [bundles addObject:classBundle];
+    NSBundle *mainBundle = [NSBundle mainBundle];
+    if (mainBundle) [bundles addObject:mainBundle];
+
+    for (NSBundle *bundle in bundles) {
+        NSString *path = [bundle pathForResource:@"valenced.manifest" ofType:@"json"];
+        if (path) return [NSURL fileURLWithPath:path];
+    }
+    return nil;
+}
+
+static PluginRecord *BundledPluginRecordFromEntry(NSDictionary *entry, NSString *bundleVersion) {
+    if (![entry isKindOfClass:[NSDictionary class]]) return nil;
+
+    NSString *pluginId = [entry[@"id"] isKindOfClass:[NSString class]] ? entry[@"id"] : nil;
+    if (pluginId.length == 0) return nil;
+
+    if (isReservedPluginId(pluginId)) return nil;
+
+    NSString *version = [entry[@"version"] isKindOfClass:[NSString class]] ? entry[@"version"] : bundleVersion;
+    if (version.length == 0) return nil;
+
+    NSMutableDictionary<NSString *, id> *dependencies = [NSMutableDictionary dictionary];
+    NSDictionary *rawDependencies = [entry[@"dependencies"] isKindOfClass:[NSDictionary class]] ? entry[@"dependencies"] : nil;
+    for (NSString *depId in rawDependencies) {
+        if ([rawDependencies[depId] isKindOfClass:[NSDictionary class]]) dependencies[depId] = rawDependencies[depId];
+    }
+
+    if (!isReservedPluginId(pluginId)) {
+        dependencies[@"valenced.api"] = dependencies[@"valenced.api"] ?: @{};
+        dependencies[@"discord"] = dependencies[@"discord"] ?: @{};
+    }
+
+    NSMutableDictionary *manifestDict = [NSMutableDictionary dictionaryWithDictionary:@{
+        @"format": @1,
+        @"id": pluginId,
+        @"name": [entry[@"name"] isKindOfClass:[NSString class]] ? entry[@"name"] : pluginId,
+        @"description": [entry[@"description"] isKindOfClass:[NSString class]] ? entry[@"description"] : @"",
+        @"author": [entry[@"author"] isKindOfClass:[NSString class]] ? entry[@"author"] : @"",
+        @"version": version,
+        @"dependencies": dependencies,
+    }];
+    NSString *icon = [entry[@"icon"] isKindOfClass:[NSString class]] ? entry[@"icon"] : nil;
+    if (icon.length > 0) manifestDict[@"icon"] = icon;
+
+    NSString *parseError = nil;
+    PluginManifest *manifest = [PluginManifest manifestFromDictionary:manifestDict error:&parseError];
+    if (!manifest) {
+        ValencedLog(@"Skipping bundled plugin '%@': %@", pluginId, parseError ?: @"invalid manifest");
+        return nil;
+    }
+
+    PluginRecord *record = [PluginRecord recordWithManifest:manifest];
+    record.isInternal = YES;
+    record.isEssential = JSONBoolValue(entry, @"essential");
+    record.isEnabledByDefault = record.isEssential || JSONBoolValue(entry, @"enabledByDefault");
+    record.flags = (record.isEssential || record.isEnabledByDefault) ? PluginFlagEnabled : 0;
+
+    NSDictionary *defaultSource = [entry[@"defaultSource"] isKindOfClass:[NSDictionary class]]
+        ? entry[@"defaultSource"] : nil;
+    NSString *defaultRepo = [defaultSource[@"repo"] isKindOfClass:[NSString class]] ? defaultSource[@"repo"] : nil;
+    if (defaultRepo.length > 0) {
+        record.defaultSourceRepo = defaultRepo;
+        record.defaultSourceChannel = [defaultSource[@"channel"] isKindOfClass:[NSString class]]
+            ? defaultSource[@"channel"] : nil;
+    }
+    return record;
 }
 
 BOOL RequireValidPluginId(NSString *id) {
@@ -370,11 +455,42 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
     return factories;
 }
 
-- (NSArray<PluginRecord *> *)providerRecords {
-    static NSArray<PluginRecord *> *providers;
+- (NSArray<PluginRecord *> *)bundledRecords {
+    NSURL *manifestURL = ShippedBundleManifestURL();
+    if (!manifestURL) {
+        ValencedLog(@"No shipped bundle manifest found; bundled plugin dependencies are unavailable");
+        return @[];
+    }
+
+    NSData *data = [NSData dataWithContentsOfURL:manifestURL];
+    NSDictionary *manifest = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    if (![manifest isKindOfClass:[NSDictionary class]]) {
+        ValencedLog(@"Failed to read shipped bundle manifest at %@", manifestURL.path);
+        return @[];
+    }
+
+    NSString *bundleVersion = [manifest[@"version"] isKindOfClass:[NSString class]] ? manifest[@"version"] : nil;
+    if (bundleVersion.length == 0) {
+        ValencedLog(@"Shipped bundle manifest has no version");
+        return @[];
+    }
+
+    NSArray *entries = [manifest[@"plugins"] isKindOfClass:[NSArray class]] ? manifest[@"plugins"] : @[];
+    NSMutableArray<PluginRecord *> *records = [NSMutableArray arrayWithCapacity:entries.count];
+    for (id entry in entries) {
+        if (![entry isKindOfClass:[NSDictionary class]]) continue;
+        PluginRecord *record = BundledPluginRecordFromEntry(entry, bundleVersion);
+        if (record) [records addObject:record];
+    }
+    return records;
+}
+
+- (NSArray<PluginRecord *> *)internalRecords {
+    static NSArray<PluginRecord *> *records;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        NSMutableArray *records = [NSMutableArray array];
+        NSMutableArray *all = [NSMutableArray array];
+        NSMutableSet<NSString *> *knownIds = [NSMutableSet set];
         for (InternalPluginFactory *factory in [self internalFactories]) {
             PluginRecord *record = [PluginRecord recordWithManifest:factory.manifest];
             record.isInternal = factory.internalFlag;
@@ -382,11 +498,28 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
             record.isEnabledByDefault = factory.enabledByDefaultFlag;
             record.isApi = factory.apiFlag;
             record.flags = PluginFlagEnabled;
-            [records addObject:record];
+            [all addObject:record];
+            [knownIds addObject:record.manifest.id];
         }
-        providers = records;
+        for (PluginRecord *record in [self bundledRecords]) {
+            NSString *pluginId = record.manifest.id;
+            if ([knownIds containsObject:pluginId]) continue;
+            [all addObject:record];
+            [knownIds addObject:pluginId];
+        }
+        records = all;
     });
-    return providers;
+    return records;
+}
+
+- (void)seedDefaultSourcesForInternalRecords:(NSArray<PluginRecord *> *)records {
+    NSDictionary<NSString *, PluginSource *> *existing = SourcesStoreAll();
+    for (PluginRecord *record in records) {
+        if (!record.defaultSourceRepo) continue;
+        NSString *pluginId = record.manifest.id;
+        if (existing[pluginId]) continue;
+        SourcesStoreSet(pluginId, record.defaultSourceRepo, record.defaultSourceChannel);
+    }
 }
 
 - (void)loadPlugins {
@@ -402,19 +535,37 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
     PluginStatesStore *store = [PluginStatesStore sharedStore];
     [store ensureLoaded];
 
-    NSMutableDictionary<NSString *, PluginRecord *> *discovered = [NSMutableDictionary dictionary];
     [_failureRecords removeAllObjects];
     [_records removeAllObjects];
 
-    NSArray<PluginRecord *> *providers = [self providerRecords];
-    for (PluginRecord *provider in providers) {
-        _records[provider.manifest.id] = provider;
+
+    NSArray<PluginRecord *> *internals = [self internalRecords];
+    [self seedDefaultSourcesForInternalRecords:internals];
+
+    NSDictionary<NSString *, PluginSource *> *sources = SourcesStoreAll();
+    NSMutableSet<NSString *> *shadowedIds = [NSMutableSet set];
+    for (PluginRecord *record in internals) {
+        NSString *pluginId = record.manifest.id;
+        if (!sources[pluginId]) continue;
+        NSURL *installedManifest = [[dist URLByAppendingPathComponent:pluginId] URLByAppendingPathComponent:kManifestFile];
+        if (![fm fileExistsAtPath:installedManifest.path]) continue;
+        [shadowedIds addObject:pluginId];
+        ValencedLog(@"Using installed copy of internal plugin: %@", pluginId);
     }
 
-    NSArray<NSURL *> *contents = [[fm contentsOfDirectoryAtURL:dist includingPropertiesForKeys:nil options:0 error:nil]
-        sortedArrayUsingComparator:^NSComparisonResult(NSURL *a, NSURL *b) {
-            return [a.path caseInsensitiveCompare:b.path];
-        }];
+    NSMutableArray<PluginRecord *> *known = [NSMutableArray arrayWithCapacity:internals.count];
+    NSMutableSet<NSString *> *knownIds = [NSMutableSet set];
+    NSMutableDictionary<NSString *, PluginManifest *> *graphKnown = [NSMutableDictionary dictionary];
+    for (PluginRecord *record in internals) {
+        NSString *pluginId = record.manifest.id;
+        if ([shadowedIds containsObject:pluginId]) continue;
+        [known addObject:record];
+        [knownIds addObject:pluginId];
+        graphKnown[pluginId] = record.manifest;
+    }
+
+    NSMutableDictionary<NSString *, PluginRecord *> *discovered = [NSMutableDictionary dictionary];
+    NSArray<NSURL *> *contents = [fm contentsOfDirectoryAtURL:dist includingPropertiesForKeys:nil options:0 error:nil];
     for (NSURL *url in contents) {
         if ([url.lastPathComponent hasPrefix:@"."]) continue;
         NSURL *manifestURL = [url URLByAppendingPathComponent:kManifestFile];
@@ -443,18 +594,18 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
             [self clearPersistedState:url.lastPathComponent];
             continue;
         }
-        if (discovered[manifest.id] || _failureRecords[manifest.id]) continue;
+        if ([knownIds containsObject:manifest.id]) {
+            ValencedLog(@"Ignoring installed copy of internal plugin '%@' in '%@'", manifest.id, url.lastPathComponent);
+            continue;
+        }
+        if (discovered[manifest.id]) continue;
+        [_failureRecords removeObjectForKey:manifest.id];
         PluginRecord *record = [PluginRecord recordWithManifest:manifest];
         record.bundlePath = [url path];
-        record.scriptContent = [self readScriptForDirectory:url manifest:record.manifest];
+        record.scriptContent = [self readScriptForDirectory:url manifest:manifest];
         discovered[manifest.id] = record;
+        graphKnown[manifest.id] = manifest;
     }
-
-    NSMutableDictionary<NSString *, PluginRecord *> *recordsById = [NSMutableDictionary dictionaryWithDictionary:discovered];
-    for (PluginRecord *provider in providers) recordsById[provider.manifest.id] = provider;
-
-    NSMutableDictionary<NSString *, PluginManifest *> *graphKnown = [NSMutableDictionary dictionaryWithCapacity:recordsById.count];
-    for (NSString *id in recordsById) graphKnown[id] = recordsById[id].manifest;
 
     NSString *graphJson = [self graphManifestsJsonForManifests:graphKnown];
     if (!graphJson) {
@@ -517,16 +668,16 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
         }
     }
 
-    NSMutableArray<PluginRecord *> *ordered = [NSMutableArray array];
+    NSMutableArray<PluginRecord *> *external = [NSMutableArray array];
     NSArray *orderedIds = graphResult[@"ordered"];
     if ([orderedIds isKindOfClass:[NSArray class]]) {
         for (NSString *pluginId in orderedIds) {
             PluginRecord *record = discovered[pluginId];
-            if (record) [ordered addObject:record];
+            if (record) [external addObject:record];
         }
     }
 
-    for (PluginRecord *record in ordered) {
+    for (PluginRecord *record in external) {
         NSString *id = record.manifest.id;
         NSMutableArray<PluginErrorInfo *> *failedDeps = [NSMutableArray array];
         for (NSString *depId in record.manifest.dependencies) {
@@ -546,8 +697,13 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
         _records[id] = record;
     }
 
+    for (PluginRecord *record in known) _records[record.manifest.id] = record;
+
+    NSMutableArray<PluginRecord *> *loadable = [NSMutableArray arrayWithArray:known];
+    [loadable addObjectsFromArray:external];
+
     [store batchSave:^{
-        for (PluginRecord *record in ordered) {
+        for (PluginRecord *record in loadable) {
             NSString *id = record.manifest.id;
             BOOL essential = record.isEssential || isReservedPluginId(id);
             BOOL enabledByDefault = record.isEnabledByDefault || [id hasPrefix:@"internal."];
@@ -650,6 +806,7 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
 
 - (LoadedPlugin *)loadRecord:(PluginRecord *)record late:(BOOL)late {
     if (late) record.flags |= PluginFlagStartedLate;
+    if (!record.bundlePath) return nil;
 
     NSURL *dylibURL = [NSURL fileURLWithPath:[record.bundlePath stringByAppendingPathComponent:PLUGIN_BINARY_FILE]];
     if (![[NSFileManager defaultManager] fileExistsAtPath:dylibURL.path]) return nil;
@@ -913,6 +1070,10 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
     PluginRecord *record = _records[pluginId];
     if (!record) {
         ValencedLog(@"startNative: '%@' has no native record (JS-only or unknown)", pluginId);
+        return YES;
+    }
+    if (!record.bundlePath) {
+        ValencedLog(@"startNative: %@ is JS-only (no bundle path); JS handles it", pluginId);
         return YES;
     }
     NSURL *dylibURL = [NSURL fileURLWithPath:[record.bundlePath stringByAppendingPathComponent:PLUGIN_BINARY_FILE]];
