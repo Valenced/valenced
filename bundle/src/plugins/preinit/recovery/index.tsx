@@ -103,6 +103,8 @@ function freezeDetectionService() {
     }
 
     unsubFlux = onFluxEventDispatched('APP_STATE_UPDATE', clear)
+    // this is for iOS since it doesnt have APP_STATE_UPDATE :P
+    unsubFlux = onFluxEventDispatched('SET_NATIVE_PERMISSION', clear)
     // clear() may have run before unsubStore/unsubFlux was assigned, so run it again to unsub
     if (cleared) {
         clear()
