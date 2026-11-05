@@ -47,14 +47,20 @@ void showErrorAlert(NSString *title, NSString *message, void (^completion)(void)
 }
 
 void reloadApp(UIViewController *viewController) {
-    [viewController
-        dismissViewControllerAnimated:NO
-                           completion:^{
-                               UIApplication *app = [UIApplication sharedApplication];
-                               ((void (*)(id, SEL))objc_msgSend)(app, @selector(suspend));
-                               dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC),
-                                              dispatch_get_main_queue(), ^{ exit(0); });
-                           }];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        void (^finish)(void) = ^{
+            UIApplication *app = [UIApplication sharedApplication];
+            ((void (*)(id, SEL))objc_msgSend)(app, @selector(suspend));
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC),
+                           dispatch_get_main_queue(), ^{ exit(0); });
+        };
+
+        if (viewController) {
+            [viewController dismissViewControllerAnimated:NO completion:finish];
+        } else {
+            finish();
+        }
+    });
 }
 
 BOOL isHermesBytecode(NSData *data) {
@@ -77,7 +83,23 @@ BOOL isHermesBytecode(NSData *data) {
     return NO;
 }
 
-void showRecoveryAlert(UIViewController *presenter) {
+static UIViewController *topPresentableViewController(UIViewController *start) {
+    UIViewController *host = start;
+    if (!host) {
+        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+            if (w.isKeyWindow) {
+                host = w.rootViewController;
+                break;
+            }
+        }
+    }
+    while (host.presentedViewController && !host.presentedViewController.isBeingDismissed) {
+        host = host.presentedViewController;
+    }
+    return host;
+}
+
+static void presentRecoveryAlert(UIViewController *presenter) {
     UIAlertController *alert =
         [UIAlertController alertControllerWithTitle:@"Valenced Recovery Options"
                                             message:nil
@@ -89,10 +111,36 @@ void showRecoveryAlert(UIViewController *presenter) {
 
     [alert addAction:[UIAlertAction actionWithTitle:@"Enter Recovery Mode" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
 
-        NSURL *pluginsRoot = [getValencedDirectory() URLByAppendingPathComponent:PLUGIN_STORAGE_DIR];
-        NSURL *marker = [pluginsRoot URLByAppendingPathComponent:DEFAULTS_ONLY_MARKER_FILE];
-        [[NSFileManager defaultManager] createDirectoryAtURL:pluginsRoot withIntermediateDirectories:YES attributes:nil error:nil];
-        [@"" writeToURL:marker atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        BridgeHandler getConstants = bridgeHandlers()[@"valenced.plugins.getConstants"];
+        BridgeHandler setSlot = bridgeHandlers()[@"valenced.plugins.states.setActiveSlot"];
+
+        NSString *errorMessage = nil;
+        NSString *slot = nil;
+
+        if (!getConstants || !setSlot) {
+            errorMessage = @"Plugin system handlers not found";
+        } else {
+            NSDictionary *constantsResponse = getConstants(@[]);
+            NSDictionary *constants = constantsResponse[@"result"];
+            if ([constants isKindOfClass:[NSDictionary class]]) {
+                slot = constants[@"defaultsOnlySlot"];
+            }
+
+            if (![slot isKindOfClass:[NSString class]] || slot.length == 0) {
+                errorMessage = constantsResponse[@"error"] ?: @"Could not read defaultsOnlySlot";
+            } else {
+                NSDictionary *setResponse = setSlot(@[slot, @YES]);
+                if (setResponse[@"error"]) errorMessage = setResponse[@"error"];
+            }
+        }
+
+        if (errorMessage) {
+            showErrorAlert(@"Valenced Recovery",
+                           [NSString stringWithFormat:@"Failed to enter recovery mode: %@", errorMessage],
+                           nil);
+            return;
+        }
+
         reloadApp(presenter);
     }]];
 
@@ -115,25 +163,45 @@ void showRecoveryAlert(UIViewController *presenter) {
 
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *host = presenter;
-        if (!host) {
-            UIWindow *window = nil;
-            for (UIWindow *w in [UIApplication sharedApplication].windows) {
-                if (w.isKeyWindow) { window = w; break; }
-            }
-            UIViewController *top = window.rootViewController;
-            while (top.presentedViewController) top = top.presentedViewController;
-            host = top;
-        }
+    UIViewController *host = topPresentableViewController(presenter);
+    if (!host || !host.view) return;
 
-        if (alert.preferredStyle == UIAlertControllerStyleActionSheet && host.view) {
-            alert.popoverPresentationController.sourceView = host.view;
-            alert.popoverPresentationController.sourceRect = host.view.bounds;
-        } else if (alert.preferredStyle == UIAlertControllerStyleActionSheet && !host.view) {
+    UIPopoverPresentationController *popover = alert.popoverPresentationController;
+    if (popover) {
+        popover.sourceView = host.view;
+        popover.sourceRect = CGRectMake(CGRectGetMidX(host.view.bounds),
+                                        CGRectGetMidY(host.view.bounds), 0, 0);
+        popover.permittedArrowDirections = 0;
+    }
+
+    [host presentViewController:alert animated:YES completion:nil];
+}
+
+void showRecoveryAlert(UIViewController *presenter) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *host = topPresentableViewController(presenter);
+
+        if ([host isKindOfClass:[UIAlertController class]] && host.presentingViewController) {
+            [host.presentingViewController dismissViewControllerAnimated:YES
+                                                              completion:^{
+                                                                  presentRecoveryAlert(presenter);
+                                                              }];
             return;
         }
-        [host presentViewController:alert animated:YES completion:nil];
+
+        UIViewController *dismissing = host.presentedViewController;
+        if (dismissing.isBeingDismissed) {
+            id<UIViewControllerTransitionCoordinator> coordinator = dismissing.transitionCoordinator;
+            if (coordinator) {
+                [coordinator animateAlongsideTransition:nil
+                                             completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+                                                 presentRecoveryAlert(presenter);
+                                             }];
+                return;
+            }
+        }
+
+        presentRecoveryAlert(presenter);
     });
 }
 
