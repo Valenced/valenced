@@ -45,6 +45,15 @@ RepoIndex * _Nullable ParseRepoIndex(NSString *text, NSString *repoUrl) {
         plugin.name = [rawPlugin[@"name"] isKindOfClass:[NSString class]] ? rawPlugin[@"name"] : @"";
         plugin.descriptionText = [rawPlugin[@"description"] isKindOfClass:[NSString class]] ? rawPlugin[@"description"] : @"";
         plugin.author = [rawPlugin[@"author"] isKindOfClass:[NSString class]] ? rawPlugin[@"author"] : @"";
+
+        NSMutableArray<NSString *> *contributors = [NSMutableArray array];
+        NSArray *rawContributors =
+            [rawPlugin[@"contributors"] isKindOfClass:[NSArray class]] ? rawPlugin[@"contributors"] : nil;
+        for (id contributor in rawContributors) {
+            if ([contributor isKindOfClass:[NSString class]]) [contributors addObject:contributor];
+        }
+        plugin.contributors = contributors;
+
         plugin.icon = [rawPlugin[@"icon"] isKindOfClass:[NSString class]] ? rawPlugin[@"icon"] : nil;
 
         NSMutableDictionary<NSString *, RepoVersion *> *versions = [NSMutableDictionary dictionary];

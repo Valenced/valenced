@@ -40,6 +40,7 @@ static NSArray *internalRepoPluginsJSPayload(void) {
             @"name": record.manifest.name,
             @"description": record.manifest.descriptionText,
             @"author": record.manifest.author,
+            @"contributors": record.manifest.contributors ?: @[],
             @"icon": record.manifest.icon ?: [NSNull null],
             @"channels": @{REPO_CHANNEL_LATEST: version},
             @"versions": @{version: @{
@@ -179,6 +180,7 @@ extern "C" void RegisterRepoMethods(void) {
                 @"name": plugin.name,
                 @"description": plugin.descriptionText,
                 @"author": plugin.author,
+                @"contributors": plugin.contributors ?: @[],
                 @"icon": plugin.icon ?: [NSNull null],
                 @"channels": plugin.channels ?: @{},
                 @"versions": versions,

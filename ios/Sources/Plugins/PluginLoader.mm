@@ -93,12 +93,20 @@ static PluginRecord *BundledPluginRecordFromEntry(NSDictionary *entry, NSString 
         dependencies[@"discord"] = dependencies[@"discord"] ?: @{};
     }
 
+    NSMutableArray<NSString *> *contributors = [NSMutableArray array];
+    NSArray *rawContributors =
+        [entry[@"contributors"] isKindOfClass:[NSArray class]] ? entry[@"contributors"] : nil;
+    for (id contributor in rawContributors) {
+        if ([contributor isKindOfClass:[NSString class]]) [contributors addObject:contributor];
+    }
+
     NSMutableDictionary *manifestDict = [NSMutableDictionary dictionaryWithDictionary:@{
         @"format": @1,
         @"id": pluginId,
         @"name": [entry[@"name"] isKindOfClass:[NSString class]] ? entry[@"name"] : pluginId,
         @"description": [entry[@"description"] isKindOfClass:[NSString class]] ? entry[@"description"] : @"",
         @"author": [entry[@"author"] isKindOfClass:[NSString class]] ? entry[@"author"] : @"",
+        @"contributors": contributors,
         @"version": version,
         @"dependencies": dependencies,
     }];
@@ -227,6 +235,7 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
         @"name": self.manifest.name,
         @"description": self.manifest.descriptionText ?: @"",
         @"author": self.manifest.author ?: @"",
+        @"contributors": self.manifest.contributors ?: @[],
         @"icon": self.manifest.icon ?: [NSNull null],
         @"dependencies": deps,
         @"version": @{
@@ -429,6 +438,7 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
                                       name:@"Valenced Plugin API"
                                description:@"Provides the Valenced plugin API."
                                     author:@"Valenced"
+                              contributors:@[]
                                       icon:nil
                               dependencies:@{}
                                    version:apiVer];
@@ -437,6 +447,7 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
                                       name:@"Discord"
                                description:@"Provides the host Discord app version."
                                     author:@"Discord"
+                              contributors:@[]
                                       icon:nil
                               dependencies:@{}
                                    version:hostVer];
@@ -727,7 +738,7 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
 - (void)recordFailureForId:(NSString *)id manifest:(PluginManifest *)manifest errors:(NSArray<PluginErrorInfo *> *)errors {
     PluginRecord *record = manifest ? [PluginRecord recordWithManifest:manifest] : nil;
     if (!record) {
-        PluginManifest *placeholder = [PluginManifest manifestWithId:id name:id description:@"" author:@"" icon:nil dependencies:@{} version:[PluginVersion versionWithNumbers:@[@0] label:nil]];
+        PluginManifest *placeholder = [PluginManifest manifestWithId:id name:id description:@"" author:@"" contributors:@[] icon:nil dependencies:@{} version:[PluginVersion versionWithNumbers:@[@0] label:nil]];
         record = [PluginRecord recordWithManifest:placeholder];
         record.flags = 0;
     } else {

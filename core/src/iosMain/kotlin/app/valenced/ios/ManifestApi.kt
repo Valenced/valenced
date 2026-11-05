@@ -27,6 +27,7 @@ fun manifestParse(
             name = manifest.name,
             description = manifest.description,
             author = manifest.author,
+            contributors = manifest.contributors,
             icon = manifest.icon,
             version = manifest.version.toString(),
             dependencies = manifest.dependencies.mapValues { (_, dep) ->
@@ -50,6 +51,7 @@ internal data class NormalizedManifest(
     val name: String,
     val description: String,
     val author: String,
+    val contributors: List<String> = emptyList(),
     val icon: String? = null,
     val version: String,
     val dependencies: Map<String, NormalizedDependency> = emptyMap(),

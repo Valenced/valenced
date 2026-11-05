@@ -20,6 +20,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic, copy) NSString *descriptionText;
 @property (nonatomic, copy) NSString *author;
+@property (nonatomic, copy) NSArray<NSString *> *contributors;
 @property (nonatomic, copy, nullable) NSString *icon;
 @property (nonatomic, copy) NSDictionary<NSString *, PluginDependency *> *dependencies;
 @property (nonatomic, strong) PluginVersion *version;
@@ -29,6 +30,7 @@ NS_ASSUME_NONNULL_BEGIN
                           name:(NSString *)name
                    description:(NSString *)descriptionText
                           author:(NSString *)author
+                    contributors:(NSArray<NSString *> *)contributors
                           icon:(nullable NSString *)icon
                   dependencies:(NSDictionary<NSString *, PluginDependency *> *)dependencies
                        version:(PluginVersion *)version;

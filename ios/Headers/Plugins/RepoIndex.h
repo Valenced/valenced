@@ -16,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic, copy) NSString *descriptionText;
 @property (nonatomic, copy) NSString *author;
+@property (nonatomic, copy) NSArray<NSString *> *contributors;
 @property (nonatomic, copy, nullable) NSString *icon;
 @property (nonatomic, copy) NSDictionary<NSString *, NSString *> *channels;
 @property (nonatomic, copy) NSDictionary<NSString *, RepoVersion *> *versions;

@@ -23,6 +23,7 @@
                             name:(NSString *)name
                      description:(NSString *)descriptionText
                             author:(NSString *)author
+                      contributors:(NSArray<NSString *> *)contributors
                             icon:(nullable NSString *)icon
                     dependencies:(NSDictionary<NSString *, PluginDependency *> *)dependencies
                          version:(PluginVersion *)version {
@@ -31,6 +32,7 @@
     m->_name = [name copy];
     m->_descriptionText = [descriptionText copy];
     m->_author = [author copy];
+    m->_contributors = [contributors copy];
     m->_icon = [icon copy];
     m->_dependencies = [dependencies copy];
     m->_version = version;
@@ -100,11 +102,19 @@
         if ([script isKindOfClass:[NSString class]] && ((NSString *) script).length > 0) distScript = script;
     }
 
+    NSMutableArray<NSString *> *contributors = [NSMutableArray array];
+    NSArray *rawContributors =
+        [parsed[@"contributors"] isKindOfClass:[NSArray class]] ? parsed[@"contributors"] : nil;
+    for (id contributor in rawContributors) {
+        if ([contributor isKindOfClass:[NSString class]]) [contributors addObject:contributor];
+    }
+
     NSString *icon = [parsed[@"icon"] isKindOfClass:[NSString class]] ? parsed[@"icon"] : nil;
     PluginManifest *manifest = [PluginManifest manifestWithId:parsed[@"id"]
                                                          name:parsed[@"name"]
                                                   description:parsed[@"description"] ?: @""
                                                          author:parsed[@"author"] ?: @""
+                                                   contributors:contributors
                                                          icon:icon
                                                  dependencies:dependencies
                                                       version:version];
@@ -128,6 +138,7 @@
         @"name": self.name,
         @"description": self.descriptionText,
         @"author": self.author,
+        @"contributors": self.contributors ?: @[],
         @"version": self.version.stringValue,
         @"dependencies": deps,
     }];
@@ -141,6 +152,7 @@
     m->_name = [self.name copy];
     m->_descriptionText = [self.descriptionText copy];
     m->_author = [self.author copy];
+    m->_contributors = [self.contributors copy];
     m->_icon = [self.icon copy];
     m->_dependencies = [self.dependencies copy];
     m->_version = self.version;
