@@ -28,6 +28,11 @@ ValencedTweak_CCFLAGS += -F$(VALENCED_CORE_FW)
 ValencedTweak_LDFLAGS += -F$(VALENCED_CORE_FW) -Wl,-force_load,$(VALENCED_CORE_FW)/ValencedCore
 endif
 
+ifneq ($(VALENCED_BUNDLE_DIR),)
+ValencedTweak_LDFLAGS += -Wl,-sectcreate,__DATA,__vbundle,$(VALENCED_BUNDLE_DIR)/valenced.bundle
+ValencedTweak_LDFLAGS += -Wl,-sectcreate,__DATA,__vmanifest,$(VALENCED_BUNDLE_DIR)/manifest.json
+endif
+
 include $(THEOS_MAKE_PATH)/tweak.mk
 
 after-stage::
@@ -35,4 +40,6 @@ after-stage::
 ifneq ($(VALENCED_BUNDLE_DIR),)
 	$(ECHO_NOTHING)cp $(VALENCED_BUNDLE_DIR)/valenced.bundle $(THEOS_STAGING_DIR)/Library/MobileSubstrate/DynamicLibraries/$(ECHO_END)
 	$(ECHO_NOTHING)cp $(VALENCED_BUNDLE_DIR)/manifest.json $(THEOS_STAGING_DIR)/Library/MobileSubstrate/DynamicLibraries/valenced.manifest.json$(ECHO_END)
+	$(ECHO_NOTHING)mkdir -p $(THEOS_STAGING_DIR)/Library/MobileSubstrate/DynamicLibraries/ValencedManifest.bundle$(ECHO_END)
+	$(ECHO_NOTHING)cp $(VALENCED_BUNDLE_DIR)/manifest.json $(THEOS_STAGING_DIR)/Library/MobileSubstrate/DynamicLibraries/ValencedManifest.bundle/valenced.manifest.json$(ECHO_END)
 endif

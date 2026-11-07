@@ -2,6 +2,8 @@
 #import "Constants.h"
 #import "Bridge.h"
 #import "Logger.h"
+#import <mach-o/getsect.h>
+#import <mach-o/loader.h>
 #import <objc/message.h>
 #import <dlfcn.h>
 #import <sys/utsname.h>
@@ -14,6 +16,15 @@ NSURL *getValencedDirectory(void) {
         [fm createDirectoryAtURL:valenced withIntermediateDirectories:YES attributes:nil error:nil];
     }
     return valenced;
+}
+
+NSData *ValencedEmbeddedSection(const char *name) {
+    Dl_info info;
+    if (!dladdr((void *)&ValencedEmbeddedSection, &info) || !info.dli_fbase) return nil;
+    unsigned long size = 0;
+    uint8_t *p = getsectiondata((const struct mach_header_64 *)info.dli_fbase,
+                                "__DATA", name, &size);
+    return (p && size) ? [NSData dataWithBytes:p length:size] : nil;
 }
 
 void showErrorAlert(NSString *title, NSString *message, void (^completion)(void)) {

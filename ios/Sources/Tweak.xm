@@ -51,6 +51,11 @@ static void executePreloads(jsi::Runtime &runtime, NSURL *valencedDir)
 // The bundle shipped next to the tweak, built by the :bundle Gradle project.
 static NSData *loadShippedBundle(void)
 {
+    NSData *embedded = ValencedEmbeddedSection("__vbundle");
+    if (embedded.length > 0) {
+        ValencedLog(@"Using embedded bundle (%lu bytes)", (unsigned long)embedded.length);
+        return embedded;
+    }
     NSMutableArray<NSBundle *> *bundles = [NSMutableArray array];
     NSBundle *classBundle = [NSBundle bundleForClass:[PluginLoader class]];
     if (classBundle) [bundles addObject:classBundle];

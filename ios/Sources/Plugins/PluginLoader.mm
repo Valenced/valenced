@@ -50,12 +50,32 @@ static BOOL JSONBoolValue(NSDictionary *dict, NSString *key) {
     return [value isKindOfClass:[NSNumber class]] ? [value boolValue] : NO;
 }
 
+static NSURL *ShippedManifestURLInBundle(NSBundle *bundle) {
+    if (!bundle) return nil;
+
+    NSString *path = [bundle pathForResource:@"valenced.manifest" ofType:@"json"];
+    if (path) return [NSURL fileURLWithPath:path];
+
+    NSString *resourcesPath = [bundle pathForResource:@"ValencedManifest" ofType:@"bundle"];
+    if (!resourcesPath) return nil;
+    path = [resourcesPath stringByAppendingPathComponent:@"valenced.manifest.json"];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return nil;
+    return [NSURL fileURLWithPath:path];
+}
+
 static NSURL *ShippedBundleManifestURL(void) {
     Dl_info info = {};
     if (dladdr((const void *)&ShippedBundleManifestURL, &info) && info.dli_fname) {
         NSString *dir = [[NSString stringWithUTF8String:info.dli_fname] stringByDeletingLastPathComponent];
-        NSURL *url = [NSURL fileURLWithPath:[dir stringByAppendingPathComponent:kShippedManifestFile]];
-        if ([[NSFileManager defaultManager] fileExistsAtPath:url.path]) return url;
+        NSArray<NSString *> *candidates = @[
+            [dir stringByAppendingPathComponent:kShippedManifestFile],
+            [dir stringByAppendingPathComponent:@"ValencedManifest.bundle/valenced.manifest.json"],
+        ];
+        for (NSString *path in candidates) {
+            if ([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+                return [NSURL fileURLWithPath:path];
+            }
+        }
     }
 
     NSMutableArray<NSBundle *> *bundles = [NSMutableArray array];
@@ -65,8 +85,8 @@ static NSURL *ShippedBundleManifestURL(void) {
     if (mainBundle) [bundles addObject:mainBundle];
 
     for (NSBundle *bundle in bundles) {
-        NSString *path = [bundle pathForResource:@"valenced.manifest" ofType:@"json"];
-        if (path) return [NSURL fileURLWithPath:path];
+        NSURL *url = ShippedManifestURLInBundle(bundle);
+        if (url) return url;
     }
     return nil;
 }
@@ -467,16 +487,18 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
 }
 
 - (NSArray<PluginRecord *> *)bundledRecords {
-    NSURL *manifestURL = ShippedBundleManifestURL();
-    if (!manifestURL) {
-        ValencedLog(@"No shipped bundle manifest found; bundled plugin dependencies are unavailable");
-        return @[];
+    NSData *data = ValencedEmbeddedSection("__vmanifest");
+    if (!data) {
+        NSURL *manifestURL = ShippedBundleManifestURL();
+        if (!manifestURL) {
+            ValencedLog(@"No shipped bundle manifest found; bundled plugin dependencies are unavailable");
+            return @[];
+        }
+        data = [NSData dataWithContentsOfURL:manifestURL];
     }
-
-    NSData *data = [NSData dataWithContentsOfURL:manifestURL];
     NSDictionary *manifest = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
     if (![manifest isKindOfClass:[NSDictionary class]]) {
-        ValencedLog(@"Failed to read shipped bundle manifest at %@", manifestURL.path);
+        ValencedLog(@"Failed to read shipped bundle manifest");
         return @[];
     }
 
@@ -822,6 +844,10 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
     NSURL *dylibURL = [NSURL fileURLWithPath:[record.bundlePath stringByAppendingPathComponent:PLUGIN_BINARY_FILE]];
     if (![[NSFileManager defaultManager] fileExistsAtPath:dylibURL.path]) return nil;
 
+    id<Plugin> plugin = nil;
+
+    // only in developer builds right now, should this probably have its own flag? yeah
+    #ifdef DEBUG
     void *handle = dlopen(dylibURL.path.UTF8String, RTLD_NOW);
     if (!handle) {
         NSString *msg = [NSString stringWithUTF8String:dlerror()] ?: @"dlopen failed";
@@ -839,7 +865,7 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
     }
 
     id (*factory)(void) = (id (*)(void))symbol;
-    id<Plugin> plugin = factory();
+    plugin = factory();
     if (!plugin) {
         ValencedLog(@"startNative: ValencedPluginMain returned nil for %@", record.manifest.id);
         record.errorInfo = [PluginErrorInfo errorWithCode:PluginErrorLoadFailed message:@"ValencedPluginMain returned nil" stack:nil];
@@ -847,6 +873,12 @@ NSString *PluginErrorCodeString(PluginErrorCode code) {
         return nil;
     }
     [_loadedDylibs addObject:record.manifest.id];
+    #endif
+
+    if (!plugin) {
+        ValencedLog(@"Ignoring native binary for %@: native plugins are debug-only", record.manifest.id);
+        return nil;
+    }
 
     PluginScope *scope = [[PluginScope alloc] initWithManifest:record.manifest];
     [scope setStorageDir:[self storageDirectoryForPlugin:record.manifest.id].path];

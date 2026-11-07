@@ -13,6 +13,7 @@ void        showRecoveryAlert(UIViewController *presenter);
 void        RegisterRecoveryBridgeMethods(void);
 void        reloadApp(UIViewController *viewController);
 BOOL        isHermesBytecode(NSData *data);
+NSData     *ValencedEmbeddedSection(const char *name);
 dispatch_queue_t fsQueue(void);
 BOOL        onFsQueue(void);
 void        dispatchSyncFs(void (^block)(void));
