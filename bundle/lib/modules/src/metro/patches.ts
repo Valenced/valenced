@@ -90,7 +90,6 @@ const metroDefine = (
             // def.module set in metroRequire before factory is called
             handleFactoryCall(factory, def.module!)
         },
-        importedDefault: undefined,
         importedAll: undefined,
         error: undefined,
     }

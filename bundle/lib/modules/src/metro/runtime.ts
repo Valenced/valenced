@@ -19,9 +19,8 @@ export const mErrorChain: [Metro.ModuleID, unknown][] = []
 
 export const Initialized = 1 << 0
 export const HasError = 1 << 1
-export const HasImportedDefault = 1 << 2
-export const HasImportedAll = 1 << 3
-export const Initializing = 1 << 4
+export const HasImportedAll = 1 << 2
+export const Initializing = 1 << 3
 
 const InitializedOrInitializing = Initialized | Initializing
 const NotInitializedOrInitializingMask = ~InitializedOrInitializing
@@ -59,7 +58,8 @@ export const metroRequire = (moduleId => {
 
         factory!()
     } catch (e) {
-        mod.flags = (flags & NotInitializedOrInitializingMask) | HasError
+        // Keep flags set while the factory ran
+        mod.flags = (mod.flags & NotInitializedOrInitializingMask) | HasError
         mod.error = e
 
         const msg = `Module ${moduleId} failed to initialize:\n\n${getErrorStack(e)}`
@@ -82,10 +82,20 @@ export const metroRequire = (moduleId => {
 
         mErrorChain.push([moduleId, e])
 
+        // Namespace from a cycle keeps the values read so far, like the exports did before
+        const { exports } = moduleObject
+        if (mod.flags & HasImportedAll && mod.importedAll !== exports)
+            pinKeys(mod.importedAll, exports)
+
         return (moduleObject.exports = {})
     }
 
-    mod.flags = (flags & NotInitializedOrInitializingMask) | Initialized
+    mod.flags = (mod.flags & NotInitializedOrInitializingMask) | Initialized
+
+    // Namespace from a cycle only has the keys that existed then
+    if (mod.flags & HasImportedAll && mod.importedAll !== moduleObject.exports)
+        defineLiveKeys(mod.importedAll, moduleObject)
+
     executeInitializeSubscriptions(moduleId, moduleObject.exports)
 
     return moduleObject.exports
@@ -93,19 +103,10 @@ export const metroRequire = (moduleId => {
 
 global.__r = metroRequire
 
+// Uncached, so late patches on default reach callers reading at each use
 export const metroImportDefault: Metro.RequireFn = moduleId => {
     const exports = metroRequire(moduleId)
-
-    // metroRequire may have lazily registered the module via a segment, so we
-    // look up the definition after the require call.
-    const mod = mList.get(moduleId)!
-    if (mod.flags & HasImportedDefault) return mod.importedDefault
-
-    mod.flags |= HasImportedDefault
-
-    return (mod.importedDefault = exports?.__esModule
-        ? exports.default
-        : exports)
+    return exports?.__esModule ? exports.default : exports
 }
 
 export const metroImportAll: Metro.RequireFn = moduleId => {
@@ -114,11 +115,61 @@ export const metroImportAll: Metro.RequireFn = moduleId => {
     const mod = mList.get(moduleId)!
     if (mod.flags & HasImportedAll) return mod.importedAll
 
-    // Our implementation doesn't match Metro's because we modify the exports directly instead of cloning
-    // But this is why ours is superior, it allows patching the exports without needing to do it more than a single time
-    if (!exports?.__esModule) exports.default = exports
-
     mod.flags |= HasImportedAll
 
-    return (mod.importedAll = exports)
+    if (exports?.__esModule) return (mod.importedAll = exports)
+
+    // Copy like Metro, but with live reads so patches on exports still reach the namespace
+    const module = mod.module!
+    const namespace = {}
+    defineLiveKeys(namespace, module)
+    liveProperty(namespace, 'default', () => module.exports)
+    return (mod.importedAll = namespace)
+}
+
+const hasOwn = Object.prototype.hasOwnProperty
+const { getOwnPropertyDescriptor } = Object
+
+function defineLiveKeys(namespace: object, module: Metro.Module) {
+    const { exports } = module
+    for (const key in exports)
+        if (
+            hasOwn.call(exports, key) &&
+            key !== 'default' &&
+            !hasOwn.call(namespace, key)
+        )
+            liveProperty(namespace, key, () => module.exports?.[key])
+}
+
+/** Replaces live keys with the values in `exports`, keeping keys written on the namespace. */
+function pinKeys(namespace: object, exports: Metro.ModuleExports) {
+    for (const key in exports)
+        if (hasOwn.call(exports, key) && key !== 'default')
+            if (
+                !hasOwn.call(namespace, key) ||
+                getOwnPropertyDescriptor(namespace, key)!.get
+            )
+                dataProperty(namespace, key, exports[key])
+
+    if (getOwnPropertyDescriptor(namespace, 'default')!.get)
+        dataProperty(namespace, 'default', exports)
+}
+
+function liveProperty(target: object, key: string, read: () => unknown) {
+    Object.defineProperty(target, key, {
+        configurable: true,
+        enumerable: true,
+        get: read,
+        // Metro namespaces are copies, so a write stays on the copy
+        set: (value: unknown) => dataProperty(target, key, value),
+    })
+}
+
+function dataProperty(target: object, key: string, value: unknown) {
+    Object.defineProperty(target, key, {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value,
+    })
 }

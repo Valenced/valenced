@@ -87,7 +87,6 @@ export namespace ValencedMetro {
         flags: number
         module?: Module
         factory: If<Initialized, undefined, () => void>
-        importedDefault?: Metro.ModuleExports
         importedAll?: Metro.ModuleExports
         error?: If<Initialized, undefined, any>
     }

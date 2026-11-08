@@ -9,7 +9,6 @@ import {
 import {
     HasError,
     HasImportedAll,
-    HasImportedDefault,
     Initialized,
     Initializing,
     mErrorChain,
@@ -34,7 +33,6 @@ export const ModuleFlags = {
     Initialized,
     Initializing,
     HasError,
-    HasImportedDefault,
     HasImportedAll,
 }
 
