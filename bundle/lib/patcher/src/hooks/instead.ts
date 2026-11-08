@@ -1,5 +1,6 @@
 import {
     createPatchedFunctionProxy,
+    createProxyTarget,
     patchedFunctionProxyHandler,
     patchedFunctionProxyStates,
     unproxy,
@@ -130,8 +131,7 @@ export function instead<Key extends PropertyKey, Value extends UnknownFunction>(
 
     let state = patchedFunctionProxyStates.get(target)
 
-    // biome-ignore lint/complexity/useArrowFunction: We need a function that has a constructor
-    const hookNode = function () {}
+    const hookNode = createProxyTarget(target)
     // The handler makes the proxy behave as target.
     hookNode.proxy = new Proxy<any>(hookNode, insteadHookProxyHandler) as Value
     hookNode.target = target

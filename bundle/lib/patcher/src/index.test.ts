@@ -496,6 +496,59 @@ describe('Patcher', () => {
         })
     })
 
+    describe('proxy targets', () => {
+        class TestClass {
+            static helper = 1
+            value = 1
+        }
+        const kinds = {
+            arrow: Object.assign(() => 'arrow', { helper: 1 }),
+            method: Object.assign({ m() {} }.m, { helper: 1 }),
+            async: Object.assign(async () => {}, { helper: 1 }),
+            bound: Object.assign((() => {}).bind(undefined), {
+                helper: 1,
+            }),
+            class: TestClass,
+            function: Object.assign(() => {}, { helper: 1 }),
+        }
+
+        for (const [name, fn] of Object.entries(kinds))
+            test(`Object.keys and spread work on a patched ${name}`, () => {
+                const parent: Record<string, any> = { fn }
+                const unpatches = [
+                    before(parent, 'fn', args => args),
+                    instead(parent, 'fn', (args, original) =>
+                        original(...args),
+                    ),
+                ]
+
+                expect(Object.keys(parent.fn)).toEqual(Object.keys(fn))
+                expect({ ...parent.fn }).toEqual({ ...fn })
+
+                for (const unpatch of unpatches) unpatch()
+                expect(parent.fn).toBe(fn)
+            })
+
+        test('patched classes still construct', () => {
+            const parent = { TestClass }
+            before(parent, 'TestClass', args => args)
+
+            expect(new parent.TestClass()).toBeInstanceOf(TestClass)
+            expect(new parent.TestClass()).toBeInstanceOf(parent.TestClass)
+            expect(parent.TestClass.helper).toBe(1)
+        })
+
+        test('patched bound functions still construct', () => {
+            function Ctor(this: any) {
+                this.ok = true
+            }
+            const parent = { Bound: Ctor.bind(undefined) as any }
+            before(parent, 'Bound', args => args)
+
+            expect(new parent.Bound().ok).toBe(true)
+        })
+    })
+
     describe('priority system', () => {
         test('before hooks should execute in ascending priority order', () => {
             const order: number[] = []

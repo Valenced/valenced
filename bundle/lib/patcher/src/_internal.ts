@@ -151,6 +151,30 @@ interface PatchedFunctionProxyStateMap extends WeakMap<UnknownFunction, any> {
 export const patchedFunctionProxyStates: PatchedFunctionProxyStateMap =
     new WeakMap<UnknownFunction>()
 
+/** Creates a proxy target matching the `prototype` slot of `target`, as proxy invariants require. */
+export function createProxyTarget(target: UnknownFunction): any {
+    const prototype =
+        typeof target === 'function'
+            ? Object.getOwnPropertyDescriptor(target, 'prototype')
+            : undefined
+
+    if (typeof target === 'function' && !prototype) {
+        // Bound functions have no prototype, but stay constructible
+        try {
+            Reflect.construct(Object, [], target as never)
+            // biome-ignore lint/complexity/useArrowFunction: We need a function that has a constructor
+            return function () {}.bind(undefined)
+        } catch {
+            return () => {}
+        }
+    }
+
+    // biome-ignore lint/complexity/useArrowFunction: We need a function that has a constructor
+    const state = function () {}
+    if (prototype) Object.defineProperty(state, 'prototype', prototype)
+    return state
+}
+
 export function createPatchedFunctionProxy<
     Key extends PropertyKey,
     Value extends UnknownFunction,
@@ -162,8 +186,7 @@ export function createPatchedFunctionProxy<
     instead: InsteadHookNode<Value> | undefined,
     after: HookNode<AfterHook<Value>> | undefined,
 ): PatchedFunctionProxyState<Key, Value> {
-    // biome-ignore lint/complexity/useArrowFunction: We need a function that has a constructor
-    const state = function () {}
+    const state = createProxyTarget(target)
     // The handler makes the proxy behave as state.target.
     const proxy: Value = new Proxy(state, patchedFunctionProxyHandler) as any
 
