@@ -232,3 +232,66 @@ export const namespaceOnly = Object.assign(
         defaultScopesFor: namespaceOnlyGenerator.defaultScopesFor,
     },
 ) satisfies NamespaceOnly
+
+export type WithDefaultExport = FilterGenerator<{
+    <F extends FilterBase>(
+        filter: F,
+    ): Filter<{
+        Result: { default: FilterInfoOf<F>['Result'] }
+        Scopes: FilterInfoOf<F>['Scopes']
+    }>
+    <Namespace extends object, F extends FilterBase = FilterBase>(
+        filter: F,
+    ): Filter<{ Result: Namespace; Scopes: FilterInfoOf<F>['Scopes'] }>
+}>
+
+const withDefaultExportGenerator = createFilterGenerator<
+    Parameters<WithDefaultExport>
+>(
+    ([filter], id, exports, initialized) => {
+        if (!initialized) return filter(id, undefined, false)
+        // Inside composite filters, this also runs against the `default` export
+        if (exports !== getInitializedModuleExports(id)) return false
+
+        // Functions too, like `module.exports = fn` with `fn.default = Foo`
+        const type = typeof exports
+        if (type !== 'function' && (type !== 'object' || exports === null))
+            return false
+
+        return 'default' in exports && filter(id, exports.default, true)
+    },
+    ([filter]) => `valenced.default(${filter.key})`,
+    ([filter]) => filter.scopes,
+) as WithDefaultExport
+
+/**
+ * Matches the filter against the `default` export only, and returns the whole module namespace.
+ *
+ * Uninitialized modules are directly passed to the `filter`.
+ *
+ * @param filter The filter to match against the `default` export.
+ *
+ * @example
+ * ```ts
+ * const [FooModule] = lookupModule(withDefaultExport(withName<React.FC>('Foo')))
+ * // const FooModule: { default: React.FC }
+ *
+ * // Explicit namespace type, trusted like withProps<T>
+ * const [FooModule] = lookupModule(
+ *   withDefaultExport<typeof import('foo')>(withName('Foo')).and(withProps('helper')),
+ * )
+ * FooModule.helper()
+ * ```
+ */
+export const withDefaultExport = Object.assign(
+    ((filter: FilterBase) => {
+        const namespaceFilter = withDefaultExportGenerator(filter)
+        // Already the namespace, so runFilter skips its `default` export pass
+        ;(namespaceFilter as MaybeNamespaceOnly)[NamespaceOnlyMark] = true
+        return namespaceFilter
+    }) as WithDefaultExport,
+    {
+        keyFor: withDefaultExportGenerator.keyFor,
+        defaultScopesFor: withDefaultExportGenerator.defaultScopesFor,
+    },
+) satisfies WithDefaultExport

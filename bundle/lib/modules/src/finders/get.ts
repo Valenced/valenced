@@ -10,6 +10,7 @@ import type { Filter, FilterResult } from './filters'
 import type { LookupModulesOptions } from './lookup'
 import type { WaitForModulesOptions, WaitForModulesResult } from './wait'
 
+// TODO: Remove this along with returnNamespace
 export type GetModulesOptions<ReturnNamespace extends boolean = boolean> =
     WaitForModulesOptions<ReturnNamespace> &
         LookupModulesOptions<ReturnNamespace, true> & {

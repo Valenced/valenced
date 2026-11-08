@@ -23,6 +23,7 @@ import type {
 import type { Filter, FilterResult } from './filters'
 
 export type LookupModulesOptions<
+    // TODO: Remove this along with returnNamespace
     ReturnNamespace extends boolean = boolean,
     Initialize extends boolean = boolean,
 > = RunFilterReturnExportsOptions<ReturnNamespace> & {
@@ -59,6 +60,7 @@ type InitializedLookupFilterResult<
     F extends Filter,
     O extends LookupModulesOptions,
 > =
+    // TODO: Remove this along with returnNamespace
     O extends RunFilterReturnExportsOptions<true>
         ? MaybeDefaultExportMatched<FilterResult<F>>
         : FilterResult<F>

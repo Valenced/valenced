@@ -94,6 +94,7 @@ export namespace ValencedMetro {
     export type ModuleList = Map<Metro.ModuleID, ModuleDefinition>
 }
 
+// TODO: Remove this along with returnNamespace
 /**
  * Maybe the default export matched instead of the namespace, because you're using `options.returnNamespace`.
  */

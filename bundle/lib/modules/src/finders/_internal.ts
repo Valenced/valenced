@@ -6,7 +6,7 @@ import { isModuleInitialized } from '../metro/utils'
 import { NamespaceOnlyMark } from './filters/_internal'
 import type { If } from '@valenced/utils/types'
 import type { Metro } from '../types'
-import type { Filter, namespaceOnly } from './filters'
+import type { Filter, namespaceOnly, withDefaultExport } from './filters'
 import type { MaybeNamespaceOnly } from './filters/_internal'
 
 export interface RunFilterOptions {
@@ -29,6 +29,7 @@ export interface RunFilterOptions {
     initialize?: boolean
 }
 
+// TODO: Remove this along with returnNamespace
 export type RunFilterReturnExportsOptions<
     ReturnNamespace extends boolean = boolean,
 > = RunFilterOptions &
@@ -39,10 +40,24 @@ export type RunFilterReturnExportsOptions<
              * Whether to return the whole module with all exports instead of just the default export **if the default export matches**.
              *
              * @default false
+             * @deprecated Wrap the filter with {@link withDefaultExport} instead, so the result is typed as the namespace:
+             *
+             * ```ts
+             * withDefaultExport(filter)
+             * ```
+             *
+             * If the filter can match either the namespace or the `default` export:
+             *
+             * ```ts
+             * filter.or(withDefaultExport(filter))
+             * // or
+             * anyOf(filter, withDefaultExport(filter))
+             * ```
              */
             returnNamespace: true
         },
         {
+            /** @deprecated Wrap the filter with {@link withDefaultExport} instead. */
             returnNamespace?: false
         }
     >
@@ -136,6 +151,7 @@ export function runFilter(
 export function exportsFromFilterResultFlag(
     flag: FilterResultFlag,
     exports: Metro.ModuleExports,
+    // TODO: Remove this along with returnNamespace
     options?: RunFilterReturnExportsOptions,
 ) {
     if (flag === FilterResultFlags.Default && !options?.returnNamespace)

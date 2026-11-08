@@ -24,6 +24,7 @@ export type WaitForModulesUnsubscribeFunction = () => void
 
 export type WaitForModulesCallback<T> = (exports: T, id: Metro.ModuleID) => any
 
+// TODO: Remove this along with returnNamespace
 export type WaitForModulesOptions<ReturnNamespace extends boolean = boolean> =
     RunFilterReturnExportsOptions<ReturnNamespace> & {
         /**
@@ -42,6 +43,7 @@ export type WaitForModulesResult<
     F extends Filter,
     O extends WaitForModulesOptions,
 > =
+    // TODO: Remove this along with returnNamespace
     O extends RunFilterReturnExportsOptions<true>
         ? MaybeDefaultExportMatched<FilterResult<F>>
         : FilterResult<F>
