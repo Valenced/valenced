@@ -15,6 +15,9 @@
     "./error": {
       "default": "./src/error.ts"
     },
+    "./modules/lazy": {
+      "default": "./src/modules/lazy.ts"
+    },
     "./object": {
       "default": "./src/object.ts"
     },

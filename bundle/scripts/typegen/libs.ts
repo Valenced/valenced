@@ -140,6 +140,7 @@ export function getLibraries(): LibraryModule[] {
             ['callback', 'utils.callback'],
             ['discord', 'utils.discord'],
             ['error', 'utils.error'],
+            ['modules/lazy', 'utils.modules.lazy'],
             ['object', 'utils.object'],
             ['promise', 'utils.promise'],
             ['proxy', 'utils.proxy'],
