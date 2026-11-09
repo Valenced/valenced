@@ -1,0 +1,21 @@
+{
+  "name": "valenced",
+  "type": "module",
+  "private": true,
+  "workspaces": ["bundle", "bundle/lib/*", "bundle/plugins/*"],
+  "trustedDependencies": ["@biomejs/biome", "@parcel/watcher", "@swc/core"],
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.6"
+  },
+  "overrides": {
+    "@react-native/community-cli-plugin": "npm:dry-uninstall",
+    "@react-native/codegen": "npm:dry-uninstall",
+    "babel-jest": "npm:dry-uninstall",
+    "babel-plugin-syntax-hermes-parser": "npm:dry-uninstall",
+    "jsc-android": "npm:dry-uninstall",
+    "react-devtools-core": "npm:dry-uninstall",
+    "recyclerlistview": "npm:dry-uninstall",
+    "react-native-gesture-handler": "npm:dry-uninstall",
+    "react-native-screens": "npm:dry-uninstall"
+  }
+}
