@@ -1,6 +1,4 @@
-import { waitForModules } from '@valenced/modules/finders'
-import { withProps } from '@valenced/modules/finders/filters'
-import { getModuleDependencies } from '@valenced/modules/metro/utils'
+import { withDependencies, withProps } from '@valenced/modules/finders/filters'
 import { instead } from '@valenced/patcher'
 import {
     isPluginStartedLate,
@@ -8,11 +6,8 @@ import {
 } from '@valenced/plugins/_'
 import { noop } from '@valenced/utils/callback'
 import { getCurrentStack } from '@valenced/utils/error'
+import { lazyModule } from '@valenced/utils/modules/lazy'
 import manifest from './manifest.json'
-
-const cachedOnly = {
-    cached: true,
-}
 
 const fakeSentryCarrier = new Proxy(
     {
@@ -43,50 +38,37 @@ registerInternalPlugin(manifest, {
         if (isPluginStartedLate(plugin)) plugin.requireReload()
 
         // utils/SentryUtils.native.tsx
-        const unsubSU = waitForModules(
+        const SentryUtils = lazyModule(
             withProps<{
                 profiledRootComponent<T>(x: T): T
                 addBreadcrumb(): void
                 setTags(): void
                 setUser(): void
             }>('profiledRootComponent'),
-            SentryUtils => {
-                unsubSU()
+        )
 
-                // These functions by Discord attempt to call Sentry APIs that set __SENTRY__
-                instead(SentryUtils, 'profiledRootComponent', args => args[0])
-                instead(SentryUtils, 'addBreadcrumb', noop)
-                instead(SentryUtils, 'setTags', noop)
-                instead(SentryUtils, 'setUser', noop)
-            },
-            cachedOnly,
+        // These functions by Discord attempt to call Sentry APIs that set __SENTRY__
+        cleanup(
+            SentryUtils.instead('profiledRootComponent', args => args[0]),
+            SentryUtils.instead('addBreadcrumb', noop),
+            SentryUtils.instead('setTags', noop),
+            SentryUtils.instead('setUser', noop),
         )
 
         // modules/errors/native/SentryInitUtils.tsx
-        const unsubSIU = waitForModules(
-            withProps('initSentry'),
-            SentryInitUtils => {
-                unsubSIU()
-
-                instead(SentryInitUtils, 'initSentry', noop)
-            },
-            cachedOnly,
-        )
+        cleanup(lazyModule(withProps('initSentry')).instead('initSentry', noop))
 
         // Discord uses ReactNavigationInstrumentation to track navigation
         // Discord also uses Profiler to track performance, but we blocked that by patching profiledRootComponent
         // Note that to actually find Sentry, we just need to add 'init' to withProps
-        const unsubSentryInst = waitForModules(
-            withProps('ReactNavigationInstrumentation'),
-            exports => {
-                unsubSentryInst()
-
-                instead(exports, 'ReactNavigationInstrumentation', function () {
+        cleanup(
+            lazyModule(withProps('ReactNavigationInstrumentation')).instead(
+                'ReactNavigationInstrumentation',
+                function () {
                     // https://docs.sentry.io/platforms/react-native/tracing/instrumentation/react-navigation/#initialization
                     this.registerNavigationContainer = noop
-                })
-            },
-            cachedOnly,
+                },
+            ),
         )
 
         // If we hadn't modified the global
@@ -102,12 +84,10 @@ registerInternalPlugin(manifest, {
                     return getFakeCarrier()
                 },
             })
-
-        cleanup(unsubSU, unsubSIU, unsubSentryInst)
     },
     init({ cleanup }) {
         // utils/AnalyticsUtils.tsx
-        const unsubAU = waitForModules(
+        const AnalyticsUtils = lazyModule(
             withProps<{
                 trackNetworkAction: () => void
                 default: {
@@ -115,22 +95,22 @@ registerInternalPlugin(manifest, {
                     AnalyticsActionHandlers: Record<string, () => void>
                 }
             }>('trackNetworkAction'),
-            AnalyticsUtils => {
-                unsubAU()
-
-                instead(AnalyticsUtils.default, 'track', noop)
-                instead(AnalyticsUtils, 'trackNetworkAction', noop)
-
-                const { AnalyticsActionHandlers: handlers } =
-                    AnalyticsUtils.default
-
-                for (const key of Object.keys(handlers))
-                    instead(handlers, key, noop)
-            },
-            cachedOnly,
         )
 
-        cleanup(unsubAU)
+        cleanup(
+            AnalyticsUtils.prop('default').instead('track', noop),
+            AnalyticsUtils.instead('trackNetworkAction', noop),
+            AnalyticsUtils.prop('default')
+                .prop('AnalyticsActionHandlers')
+                .use(handlers => {
+                    const unpatches = Object.keys(handlers).map(key =>
+                        instead(handlers, key, noop),
+                    )
+                    return () => {
+                        for (const unpatch of unpatches) unpatch()
+                    }
+                }),
+        )
     },
     start({
         cleanup,
@@ -144,52 +124,48 @@ registerInternalPlugin(manifest, {
         },
     }) {
         // modules/app_analytics/useTrackImpression.tsx
-        const unsubTI = waitForModules(
+        const useTrackImpression = lazyModule(
             withProps<{
                 default: () => void
                 trackImpression: () => void
             }>('trackImpression'),
-            useTrackImpression => {
-                unsubTI()
+        )
 
-                instead(useTrackImpression, 'trackImpression', noop)
-                instead(useTrackImpression, 'default', noop)
-            },
-            cachedOnly,
+        cleanup(
+            useTrackImpression.instead('trackImpression', noop),
+            useTrackImpression.instead('default', noop),
         )
 
         // actions/AnalyticsTrackingActionCreators.tsx
-        const unsubATAC = waitForModules(
-            withProps('track'),
-            (AnalyticsTrackingActionCreators, id) => {
-                if (getModuleDependencies(id)![0] === DispatcherModuleId) {
-                    unsubATAC()
-
-                    logger.info('Patching AnalyticsTrackActionCreators...')
-                    instead(AnalyticsTrackingActionCreators, 'track', noop)
-                }
-            },
+        cleanup(
+            lazyModule(
+                withProps('track').and(
+                    withDependencies(
+                        withDependencies.partial([DispatcherModuleId]),
+                    ),
+                ),
+            ).use(AnalyticsTrackingActionCreators => {
+                logger.info('Patching AnalyticsTrackActionCreators...')
+                return instead(AnalyticsTrackingActionCreators, 'track', noop)
+            }),
         )
 
         // ../discord_common/js/packages/http-utils/HTTPUtils.tsx
-        const unsubHTTPUtils = waitForModules(
-            withProps('HTTP', 'post'),
-            HTTPUtils => {
-                unsubHTTPUtils()
+        cleanup(
+            lazyModule(withProps('HTTP', 'post'))
+                .prop('HTTP')
+                .use(HTTP => {
+                    logger.log('Patching HTTPUtils...')
 
-                logger.log('Patching HTTPUtils...')
+                    // Block analytics requests
+                    return instead(HTTP, 'post', (args, original) => {
+                        const [{ url }] = args
+                        if (url === '/science') return Promise.resolve()
 
-                // Block analytics requests
-                instead(HTTPUtils.HTTP, 'post', (args, original) => {
-                    const [{ url }] = args
-                    if (url === '/science') return Promise.resolve()
-
-                    return original.apply(this, args)
-                })
-            },
+                        return original.apply(this, args)
+                    })
+                }),
         )
-
-        cleanup(unsubTI, unsubATAC, unsubHTTPUtils)
     },
     stop({ plugin }) {
         plugin.requireReload()

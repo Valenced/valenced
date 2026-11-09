@@ -1,13 +1,12 @@
 import defer * as Actions from '@valenced/discord/actions'
 import { onFluxEventDispatched } from '@valenced/discord/flux'
-import { waitForModules } from '@valenced/modules/finders'
 import { withName } from '@valenced/modules/finders/filters'
 import { callNativeMethod } from '@valenced/modules/native'
-import { instead } from '@valenced/patcher'
 import { isDefaultsOnlyBoot, registerInternalPlugin } from '@valenced/plugins/_'
 import { onRunApplicationFinished } from '@valenced/react/native'
 import { asap } from '@valenced/utils/callback'
 import { getErrorStack } from '@valenced/utils/error'
+import { lazyModule } from '@valenced/utils/modules/lazy'
 import { AppState } from 'react-native'
 import { FullVersion } from '~constants'
 import { cache as assetsCache } from '../../../../lib/assets/src/caches'
@@ -125,39 +124,25 @@ function freezeDetectionService() {
 }
 
 function errorBoundaryService() {
-    const unsub = waitForModules(
-        withName<typeof DiscordErrorBoundary>('ErrorBoundary'),
-        exports => {
-            unsub()
+    return lazyModule(withName<typeof DiscordErrorBoundary>('ErrorBoundary'))
+        .prop('prototype')
+        .instead('render', function (this: DiscordErrorBoundary) {
+            if (this.state.error)
+                return (
+                    <ErrorBoundaryScreen.default
+                        error={this.state.error}
+                        reload={this.handleReload.bind(this)}
+                        rerender={() => {
+                            this.setState({
+                                error: null,
+                                info: null,
+                            })
+                        }}
+                    />
+                )
 
-            instead(
-                exports.prototype,
-                'render',
-                function (this: DiscordErrorBoundary) {
-                    if (this.state.error)
-                        return (
-                            <ErrorBoundaryScreen.default
-                                error={this.state.error}
-                                reload={this.handleReload.bind(this)}
-                                rerender={() => {
-                                    this.setState({
-                                        error: null,
-                                        info: null,
-                                    })
-                                }}
-                            />
-                        )
-
-                    return this.props.children
-                },
-            )
-        },
-        {
-            cached: true,
-        },
-    )
-
-    return unsub
+            return this.props.children
+        })
 }
 
 declare class DiscordErrorBoundary extends Component<

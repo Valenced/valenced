@@ -1,10 +1,10 @@
 import { ToastActionCreators } from '@valenced/discord/actions'
 import { getStore, Stores } from '@valenced/discord/flux'
-import { getModules } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
 import { instead } from '@valenced/patcher'
 import { registerInternalPlugin } from '@valenced/plugins/_'
 import { lookupGeneratedIconComponent } from '@valenced/utils/discord'
+import { lazyModule } from '@valenced/utils/modules/lazy'
 import manifest from './manifest.json'
 import type { DiscordModules } from '@valenced/discord/types'
 
@@ -42,28 +42,30 @@ registerInternalPlugin(manifest, {
         }
 
         cleanup(
-            getModules(withProps('isStaffEnv'), UserStoreUtils => {
+            lazyModule(withProps('isStaffEnv')).use(UserStoreUtils => {
                 logger.log('Patching UserStoreUtils...')
 
-                cleanup(
-                    instead(
-                        UserStoreUtils,
-                        'isStaffEnv',
-                        ([user]) =>
-                            user ===
-                            (
-                                Stores.UserStore as DiscordModules.Flux.Store<{
-                                    getCurrentUser(): unknown
-                                }>
-                            ).getCurrentUser(),
-                    ),
-                    reset,
-                    showToast,
+                const unpatch = instead(
+                    UserStoreUtils,
+                    'isStaffEnv',
+                    ([user]) =>
+                        user ===
+                        (
+                            Stores.UserStore as DiscordModules.Flux.Store<{
+                                getCurrentUser(): unknown
+                            }>
+                        ).getCurrentUser(),
                 )
 
                 reset()
                 if (plugin.startedLate) showToast()
-            }, { max: 1 }),
+
+                return () => {
+                    unpatch()
+                    reset()
+                    showToast()
+                }
+            }),
         )
     },
 })

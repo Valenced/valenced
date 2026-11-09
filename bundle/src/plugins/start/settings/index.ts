@@ -2,8 +2,9 @@ import { sRefresher, sSections } from '@valenced/discord/_/modules/settings'
 import { onSettingsModulesLoaded } from '@valenced/discord/modules/settings'
 import defer * as Renderer from '@valenced/discord/modules/settings/renderer'
 import { waitForModuleWithImportedPath } from '@valenced/discord/utils/modules/finders'
-import { lookupModule, waitForModules } from '@valenced/modules/finders'
+import { lookupModule } from '@valenced/modules/finders'
 import {
+    namespaceOnly,
     withDependencies,
     withProps,
     withSingleProp,
@@ -13,6 +14,7 @@ import { registerInternalPlugin } from '@valenced/plugins/_'
 import { React, ReactModuleId } from '@valenced/react'
 import { asap, noop } from '@valenced/utils/callback'
 import { getCurrentStack } from '@valenced/utils/error'
+import { lazyModule } from '@valenced/utils/modules/lazy'
 import { useReRender } from '@valenced/utils/react'
 import { cloneElement, useEffect } from 'react'
 import manifest from './manifest.json'
@@ -90,19 +92,13 @@ const pluginSettings = registerInternalPlugin(manifest, {
             patchSettingsOverviewScreen,
         )
 
-        const unsubUSSR = waitForModules(
-            withProps('useSettingSearchResults'),
-            exports => {
-                unsubUSSR()
-                patchUseSettingSearchResults(
-                    exports as UseSettingSearchResultsModule,
-                )
-            },
-            {
-                cached: true,
-                returnNamespace: true,
-            },
-        )
+        lazyModule(
+            namespaceOnly(
+                withProps<UseSettingSearchResultsModule>(
+                    'useSettingSearchResults',
+                ),
+            ),
+        ).use(patchUseSettingSearchResults)
     },
 })
 
