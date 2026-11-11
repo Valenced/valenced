@@ -2,8 +2,16 @@
   "name": "valenced",
   "type": "module",
   "private": true,
-  "workspaces": ["bundle", "bundle/lib/*", "bundle/plugins/*"],
-  "trustedDependencies": ["@biomejs/biome", "@parcel/watcher", "@swc/core"],
+  "workspaces": [
+    "bundle",
+    "bundle/lib/*",
+    "bundle/plugins/*"
+  ],
+  "trustedDependencies": [
+    "@biomejs/biome",
+    "@parcel/watcher",
+    "@swc/core"
+  ],
   "devDependencies": {
     "@biomejs/biome": "^2.6.6"
   },
