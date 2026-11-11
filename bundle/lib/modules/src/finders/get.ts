@@ -129,7 +129,7 @@ export function getModules(
                 return
             }
 
-            if (!--max) cancel()
+            if (!--max) unsub()
             callback(exports, id)
         },
         options!,
