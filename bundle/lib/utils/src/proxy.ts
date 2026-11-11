@@ -7,78 +7,74 @@ import { getCurrentStack } from './error'
  * @param obj The object to check
  */
 export function isProxified(obj: object) {
-    return pMetadata.has(obj)
+	return pMetadata.has(obj)
 }
 
 // Heavily inspired by Wintry's lazy utils, but more optimized and stripped down, with a few fixes.
 // https://github.com/pylixonly/wintry/blob/main/src/utils/lazy.ts
 
 const pMetadata = new WeakMap<
-    object,
-    {
-        factory: () => unknown
-        hint: object
-        bind: boolean
-        cacheable: boolean
-        cache?: unknown
-    }
+	object,
+	{
+		factory: () => unknown
+		hint: object
+		bind: boolean
+		cacheable: boolean
+		cache?: unknown
+	}
 >()
 
 const _handler = {
-    ...Object.fromEntries(
-        Object.getOwnPropertyNames(Reflect).map(k => [
-            k,
-            (hint: object, ...args: any[]) =>
-                // @ts-expect-error
-                Reflect[k](unproxifyFromHint(hint), ...args),
-        ]),
-    ),
-    // Workaround to fix functions that need the correct `this`
-    get: (hint, p, recv) => {
-        const target = unproxifyFromHint(hint)
-        const val = Reflect.get(target!, p, recv)
+	...Object.fromEntries(
+		Object.getOwnPropertyNames(Reflect).map(k => [
+			k,
+			(hint: object, ...args: any[]) =>
+				// @ts-expect-error
+				Reflect[k](unproxifyFromHint(hint), ...args),
+		]),
+	),
+	// Workaround to fix functions that need the correct `this`
+	get: (hint, p, recv) => {
+		const target = unproxifyFromHint(hint)
+		const val = Reflect.get(target!, p, recv)
 
-        if (pMetadata.get(hint)?.bind && typeof val === 'function')
-            return new Proxy(val, {
-                // If thisArg happens to be a proxified value, we will use the target object instead
-                apply: (fn, thisArg, args) =>
-                    Reflect.apply(
-                        fn,
-                        thisArg === recv ? target : thisArg,
-                        args,
-                    ),
-            })
+		if (pMetadata.get(hint)?.bind && typeof val === 'function')
+			return new Proxy(val, {
+				// If thisArg happens to be a proxified value, we will use the target object instead
+				apply: (fn, thisArg, args) =>
+					Reflect.apply(fn, thisArg === recv ? target : thisArg, args),
+			})
 
-        return val
-    },
-    // Workaround to fix:
-    // TypeError: getOwnPropertyDescriptor trap result is not configurable but target property '...' is configurable or non-existent
-    getOwnPropertyDescriptor: (hint, p) => {
-        const d = Reflect.getOwnPropertyDescriptor(unproxifyFromHint(hint)!, p)
-        if (d && !Reflect.getOwnPropertyDescriptor(hint, p))
-            Object.defineProperty(hint, p, d)
-        return d
-    },
+		return val
+	},
+	// Workaround to fix:
+	// TypeError: getOwnPropertyDescriptor trap result is not configurable but target property '...' is configurable or non-existent
+	getOwnPropertyDescriptor: (hint, p) => {
+		const d = Reflect.getOwnPropertyDescriptor(unproxifyFromHint(hint)!, p)
+		if (d && !Reflect.getOwnPropertyDescriptor(hint, p))
+			Object.defineProperty(hint, p, d)
+		return d
+	},
 } as ProxyHandler<object>
 
 export interface ProxifyOptions {
-    /**
-     * The hint for the proxified value.
-     *
-     * @default function () {}
-     */
-    hint?: object
-    /**
-     * Whether the proxified value should be cached.
-     */
-    cache?: boolean
-    /**
-     * For methods of the proxified value, whether to bind the `this` context to the proxified value.
-     * The original reference of this method will NOT be retained. To get the original method, use `getProxyTarget` on the method.
-     *
-     * @default false
-     */
-    bindMethods?: boolean
+	/**
+	 * The hint for the proxified value.
+	 *
+	 * @default function () {}
+	 */
+	hint?: object
+	/**
+	 * Whether the proxified value should be cached.
+	 */
+	cache?: boolean
+	/**
+	 * For methods of the proxified value, whether to bind the `this` context to the proxified value.
+	 * The original reference of this method will NOT be retained. To get the original method, use `getProxyTarget` on the method.
+	 *
+	 * @default false
+	 */
+	bindMethods?: boolean
 }
 
 /**
@@ -105,28 +101,30 @@ export interface ProxifyOptions {
  * ```
  */
 export function proxify<T>(signal: () => T, options?: ProxifyOptions): T {
-    // biome-ignore lint/complexity/useArrowFunction: We need a function with a constructor
-    const hint = options?.hint ?? function () {}
+	// biome-ignore lint/complexity/useArrowFunction: We need a function with a constructor
+	const hint = options?.hint ?? function () {}
 
-    if (__BUILD_FLAG_DEBUG_LAZY_VALUES__)
-        // Prevent race conditions where proxified values with a self modifying signal gets called,
-        // modifying the original value to a non-proxified value, causing subsequent destructure() calls to fail
+	if (__BUILD_FLAG_DEBUG_LAZY_VALUES__)
+		// Prevent race conditions where proxified values with a self modifying signal gets called,
+		// modifying the original value to a non-proxified value, causing subsequent destructure() calls to fail
 
-        asap(() => {
-            if (unproxifyFromHint(hint) == null)
-                DEBUG_warnNullishProxifiedValue()
-        })
+		asap(() => {
+			if (unproxifyFromHint(hint) == null) DEBUG_warnNullishProxifiedValue()
+		})
 
-    const prox = new Proxy(hint, _handler) as T
+	const prox = new Proxy(hint, _handler) as T
 
-    pMetadata.set(hint, {
-        hint: hint,
-        factory: signal,
-        bind: options?.bindMethods ?? false,
-        cacheable: options?.cache ?? false,
-    })
+	const meta = {
+		hint: hint,
+		factory: signal,
+		bind: options?.bindMethods ?? false,
+		cacheable: options?.cache ?? false,
+	}
 
-    return prox
+	pMetadata.set(hint, meta)
+	pMetadata.set(prox as object, meta)
+
+	return prox
 }
 
 /**
