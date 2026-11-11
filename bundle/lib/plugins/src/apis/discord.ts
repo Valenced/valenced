@@ -10,6 +10,7 @@ import defer * as DiscordNative from '@valenced/discord/native'
 import defer * as DiscordUtilsFinders from '@valenced/discord/utils/modules/finders'
 import defer * as DiscordUtilsMetroSubscriptions from '@valenced/discord/utils/modules/metro/subscriptions'
 import { defineLazyProperties } from '@valenced/utils/object'
+import { withResolvedReads } from '@valenced/utils/proxy'
 import { guardIndexInitialized } from '.'
 
 export interface PreInitPluginApiDiscord {
@@ -123,7 +124,11 @@ export const discord = defineLazyProperties(
     {
         actions: () => {
             guardIndexInitialized('Discord.actions')
-            return DiscordActions
+            return withResolvedReads(DiscordActions, {
+                ActionSheetActionCreatorsModuleId: 'ActionSheetActionCreators',
+                AlertActionCreatorsModuleId: 'AlertActionCreators',
+                ToastActionCreatorsModuleId: 'ToastActionCreators',
+            })
         },
         flux: () => {
             return DiscordFlux

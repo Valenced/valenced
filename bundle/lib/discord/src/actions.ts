@@ -18,11 +18,12 @@ import type { DiscordModules } from './types'
 
 const { atMost, relative, ordered } = withDependencies
 
+// Module IDs set by their lookups, unset until the module proxy resolves.
+// Plugins read them through `withResolvedReads` in lib/plugins/src/apis/discord.ts.
+
 // modules/action_sheet/native/ActionSheetActionCreators.tsx
-export let [ActionSheetActionCreators, ActionSheetActionCreatorsModuleId]: [
-    DiscordModules.Actions.ActionSheetActionCreators,
-    Metro.ModuleID,
-] = proxify(
+export let ActionSheetActionCreatorsModuleId: Metro.ModuleID
+export const ActionSheetActionCreators = proxify(
     () => {
         const [module, id] = lookupModule(
             withProps<DiscordModules.Actions.ActionSheetActionCreators>(
@@ -79,21 +80,18 @@ export let [ActionSheetActionCreators, ActionSheetActionCreatorsModuleId]: [
         )
 
         if (module) {
-            ActionSheetActionCreators = module
             ActionSheetActionCreatorsModuleId = id!
-            return [module, id!]
+            return module
         }
     },
     {
         hint: {},
     },
-)!
+) as DiscordModules.Actions.ActionSheetActionCreators
 
 // actions/native/AlertActionCreators.tsx
-export let [AlertActionCreators, AlertActionCreatorsModuleId]: [
-    DiscordModules.Actions.AlertActionCreators,
-    Metro.ModuleID,
-] = proxify(
+export let AlertActionCreatorsModuleId: Metro.ModuleID
+export const AlertActionCreators = proxify(
     () => {
         const [module, id] = lookupModule(
             withProps<DiscordModules.Actions.AlertActionCreators>('openAlert')
@@ -111,21 +109,18 @@ export let [AlertActionCreators, AlertActionCreatorsModuleId]: [
         )
 
         if (module) {
-            AlertActionCreators = module
             AlertActionCreatorsModuleId = id!
-            return [module, id!]
+            return module
         }
     },
     {
         hint: {},
     },
-)!
+) as DiscordModules.Actions.AlertActionCreators
 
 // modules/toast/native/ToastActionCreators.tsx
-export let [ToastActionCreators, ToastActionCreatorsModuleId]: [
-    DiscordModules.Actions.ToastActionCreators,
-    Metro.ModuleID,
-] = proxify(
+export let ToastActionCreatorsModuleId: Metro.ModuleID
+export const ToastActionCreators = proxify(
     () => {
         const generator = lookupModules(
             withProps<DiscordModules.Actions.ToastActionCreators>(
@@ -173,12 +168,11 @@ export let [ToastActionCreators, ToastActionCreatorsModuleId]: [
                     ? module.open.length === 1
                     : true
             ) {
-                ToastActionCreators = module
                 ToastActionCreatorsModuleId = id
-                return [module, id]
+                return module
             }
     },
     {
         hint: {},
     },
-)!
+) as DiscordModules.Actions.ToastActionCreators
