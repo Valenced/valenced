@@ -58,17 +58,26 @@ registerInternalPlugin(manifest, {
         // modules/errors/native/SentryInitUtils.tsx
         cleanup(lazyModule(withProps('initSentry')).instead('initSentry', noop))
 
-        // Discord uses ReactNavigationInstrumentation to track navigation
+        // Discord uses reactNavigationIntegration to track navigation
         // Discord also uses Profiler to track performance, but we blocked that by patching profiledRootComponent
         // Note that to actually find Sentry, we just need to add 'init' to withProps
+        // Source module, Sentry barrels forward to it
         cleanup(
-            lazyModule(withProps('ReactNavigationInstrumentation')).instead(
-                'ReactNavigationInstrumentation',
-                function () {
-                    // https://docs.sentry.io/platforms/react-native/tracing/instrumentation/react-navigation/#initialization
-                    this.registerNavigationContainer = noop
-                },
-            ),
+            lazyModule(
+                withProps<{
+                    reactNavigationIntegration(): {
+                        registerNavigationContainer(): void
+                    }
+                    getReactNavigationIntegration(): unknown
+                }>(
+                    'reactNavigationIntegration',
+                    'getReactNavigationIntegration',
+                ),
+            ).after('reactNavigationIntegration', integration => {
+                // https://docs.sentry.io/platforms/react-native/tracing/instrumentation/react-navigation/
+                integration.registerNavigationContainer = noop
+                return integration
+            }),
         )
 
         // If we hadn't modified the global
