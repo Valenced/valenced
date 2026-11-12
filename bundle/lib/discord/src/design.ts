@@ -38,7 +38,8 @@ export let Design: Design = proxify(
                     withDependencies<Design>(
                         atLeast(DesignMinimumDependencies, [
                             [ImportTrackerModuleId],
-                            [ImportTrackerModuleId],
+                            // [ReactNative, ImportTracker] as of 353011
+                            last([ImportTrackerModuleId]),
                             last([ImportTrackerModuleId]),
                             [ImportTrackerModuleId],
                             ImportTrackerModuleId,
