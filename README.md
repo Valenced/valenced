@@ -32,6 +32,10 @@ Valenced is a client modification for Discord mobile. This repository is a monor
 - **🎨 Themes, fonts, icons & emojis**: Customize Discord's appearance to your liking
 - **🧪 Experiments**: Try out Discord's new features before they're rolled out
 
+## ⬇️ Download
+
+Get Valenced for Android at [valenced.app](https://valenced.app).
+
 ## 👷 Codebase
 
 Valenced uses TypeScript and Kotlin Multiplatform to share code between platforms. The codebase is split into four modules:
