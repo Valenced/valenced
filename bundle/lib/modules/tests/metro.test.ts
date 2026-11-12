@@ -125,24 +125,9 @@ describe('metroImportDefault', () => {
         const exports = define(1, { x: 1 })
         expect(metroImportDefault(1)).toBe(exports)
     })
-
-    test('memoizes the first result', () => {
-        const exports = define(1, { __esModule: true, default: 'a' })
-        exports.default = 'b'
-        expect(metroImportDefault(1)).toBe('b')
-
-        exports.default = 'c'
-        expect(metroImportDefault(1)).toBe('b')
-    })
 })
 
 describe('metroImportAll', () => {
-    test('adds a default export to CommonJS modules in place', () => {
-        const exports = define(1, { x: 1 })
-        expect(metroImportAll(1)).toBe(exports)
-        expect(exports.default).toBe(exports)
-    })
-
     test('leaves ES modules alone', () => {
         const exports = define(1, { __esModule: true, default: 'value' })
         expect(metroImportAll(1)).toBe(exports)

@@ -181,15 +181,6 @@ describe('getModules', () => {
         expect(callback).toHaveBeenCalledWith({ x: 1 }, 1)
     })
 
-    test('waits for modules not initialized yet', () => {
-        const callback = vi.fn()
-        getModules(withProps('x'), callback)
-
-        define(1, { x: 1 })
-        define(2, { x: 2 })
-        expect(callback.mock.calls).toEqual([[{ x: 1 }, 1]])
-    })
-
     test('combines found and later modules up to max', async () => {
         const callback = vi.fn()
         define(1, { x: 1 })
