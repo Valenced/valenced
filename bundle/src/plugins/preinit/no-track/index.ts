@@ -9,6 +9,14 @@ import { getCurrentStack } from '@valenced/utils/error'
 import { lazyModule } from '@valenced/utils/modules/lazy'
 import manifest from './manifest.json'
 
+// The paths Discord posts analytics, metrics and client telemetry to.
+const telemetryEndpoints = new Set([
+    '/science',
+    '/metrics',
+    '/metrics/v2',
+    '/beaker',
+])
+
 const fakeSentryCarrier = new Proxy(
     {
         encodePolyfill: () => new Uint8Array(),
@@ -169,7 +177,8 @@ registerInternalPlugin(manifest, {
                     // Block analytics requests
                     return instead(HTTP, 'post', (args, original) => {
                         const [{ url }] = args
-                        if (url === '/science') return Promise.resolve()
+                        if (telemetryEndpoints.has(url))
+                            return Promise.resolve()
 
                         return original.apply(this, args)
                     })
