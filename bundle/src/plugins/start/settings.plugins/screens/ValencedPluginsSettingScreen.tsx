@@ -173,7 +173,8 @@ const RecoveryBannerTitleVariant = 'text-md/semibold'
 const useRecoveryBannerStyles = Design.createStyles({
     icon: {
         tintColor: Tokens.default.colors.TEXT_DEFAULT,
-        height: Design.TextStyleSheet[RecoveryBannerTitleVariant].lineHeight,
+        height:
+            Design.TextStyleSheet[RecoveryBannerTitleVariant]?.lineHeight ?? 20,
         width: undefined,
         aspectRatio: (ShieldIcon.width ?? 1) / (ShieldIcon.height ?? 1),
     },
@@ -221,7 +222,8 @@ const RetryIcon = getAssetByName('RetryIcon')!
 const usePendingReloadBannerStyles = Design.createStyles({
     icon: {
         tintColor: Tokens.default.colors.TEXT_DEFAULT,
-        height: Design.TextStyleSheet[RecoveryBannerTitleVariant].lineHeight,
+        height:
+            Design.TextStyleSheet[RecoveryBannerTitleVariant]?.lineHeight ?? 20,
         width: undefined,
         aspectRatio: (RetryIcon.width ?? 1) / (RetryIcon.height ?? 1),
     },
