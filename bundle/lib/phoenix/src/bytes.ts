@@ -221,6 +221,14 @@ export class ByteReader {
 }
 
 export function encodeUtf8(value: string) {
+    let ascii = 0
+    while (ascii < value.length && value.charCodeAt(ascii) < 0x80) ascii++
+    if (ascii === value.length) {
+        const bytes = new Uint8Array(value.length)
+        for (let i = 0; i < value.length; i++) bytes[i] = value.charCodeAt(i)
+        return bytes
+    }
+
     const utf8: number[] = []
 
     for (let i = 0; i < value.length; i++) {
@@ -257,6 +265,17 @@ export function encodeUtf8(value: string) {
 
 export function decodeUtf8(bytes: Uint8Array) {
     let value = ''
+
+    let ascii = 0
+    while (ascii < bytes.length && bytes[ascii] < 0x80) ascii++
+    if (ascii === bytes.length) {
+        for (let i = 0; i < bytes.length; i += 4096)
+            value += String.fromCharCode.apply(
+                null,
+                bytes.subarray(i, i + 4096) as unknown as number[],
+            )
+        return value
+    }
 
     for (let i = 0; i < bytes.length; ) {
         const byte = bytes[i++]

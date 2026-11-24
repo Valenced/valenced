@@ -50,6 +50,7 @@ const { jsMethods, logs, files, fetches, invokes } = vi.hoisted(() => {
                 return '{}'
             case 'valenced.phoenix.compatUnsupported':
                 return null
+            case 'valenced.phoenix.dispatch':
             case 'valenced.phoenix.http.invoke':
                 invokes.push(
                     Uint8Array.from(atob(args[0]), c => c.charCodeAt(0)),
@@ -193,7 +194,7 @@ describe('compat host', () => {
                             ? { type: 'MESSAGE_UPDATE', message: { id: p.id } }
                             : p)
                     onFluxEventDispatched('MESSAGE_DELETE_BULK', p => ({ ...p, ids: p.ids.slice(1) }))
-                    onFluxEventDispatched('IDLE', () => {})
+                    onFluxEventDispatched('LOCAL_ACTIVITY_UPDATE', () => {})
                     valenced.discord.common.flux.Dispatcher.subscribe('CONNECTION_OPEN', p => { globalThis.user = Stores.UserStore.getCurrentUser().id + p.user.id })
                 },
             }`),
@@ -233,8 +234,70 @@ describe('compat host', () => {
             '{"id":"2","channel_id":"c"}',
             '{"ids":["2"],"channel_id":"c"}',
         ])
-        expect(logs.join(' ')).toContain('onFluxEventDispatched("IDLE")')
+        expect(logs.join(' ')).toContain(
+            'onFluxEventDispatched("LOCAL_ACTIVITY_UPDATE")',
+        )
         expect(globalThis.__valencedPhoenixGateway!.onEvent).toBeUndefined()
+    })
+
+    test('maps IDLE onto presence updates and dispatches gateway events', async () => {
+        const frames = globalThis.__valencedPhoenixFrames!
+        const message = new ByteWriter()
+            .u32(3)
+            .u32(0x17a)
+            .u32(0)
+            .u32(0)
+            .raw(encodeUtf8('{"t":"X","s":7,"op":0,"d":{}}'))
+            .toBytes()
+        frames.onDispatch!(
+            0,
+            new ByteWriter()
+                .u16(4)
+                .raw(new Uint8Array(14))
+                .u32(message.length)
+                .raw(message)
+                .toBytes(),
+        )
+        const presence = (afk: boolean) => {
+            const struct = new ByteWriter().u8(8).i32(0).toBytes()
+            return new ByteWriter()
+                .u16(1)
+                .u16(0x3f)
+                .u32(0x125)
+                .u32(1)
+                .u32(struct.length)
+                .raw(struct)
+                .raw(
+                    encodeUtf8(
+                        JSON.stringify({
+                            op: 3,
+                            d: { status: 'online', since: 5, afk },
+                        }),
+                    ),
+                )
+                .toBytes()
+        }
+
+        await start(
+            'test.idle',
+            rnPlugin(`{
+                start() {
+                    valenced.discord.flux.onFluxEventDispatched('IDLE', p => ({ ...p, idle: false }))
+                    valenced.discord.common.flux.Dispatcher.dispatch({ type: 'MESSAGE_CREATE', message: { id: '9', channel_id: 'c' } })
+                },
+            }`),
+        )
+        const active = frames.onInvoke!(presence(true)) as Uint8Array
+        const untouched = frames.onInvoke!(presence(false))
+        await stop('test.idle')
+
+        expect(decodeUtf8(active.subarray(21))).toBe(
+            '{"op":3,"d":{"status":"online","since":0,"afk":false}}',
+        )
+        expect(untouched).toBeUndefined()
+        expect(decodeUtf8(invokes.at(-1)!.subarray(36))).toBe(
+            '{"t":"MESSAGE_CREATE","s":7,"op":0,"d":{"id":"9","channel_id":"c"}}',
+        )
     })
 })
 

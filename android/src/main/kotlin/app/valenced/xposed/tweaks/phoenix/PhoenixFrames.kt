@@ -1,5 +1,7 @@
 package app.valenced.xposed.tweaks.phoenix
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import app.valenced.xposed.api.registerNativeAsyncMethod
 import app.valenced.xposed.api.registerNativeMethod
@@ -25,9 +27,11 @@ val phoenixFrames by tweak {
                 paramTypes("byte[]", "int")
             }
         }
+    var guest: Handler? = null
     if (applyOps == null) log.w("No GuestHost.applyOps(byte[], int), outgoing op frames are not hooked")
     else applyOps.hook {
         before {
+            if (guest == null) Looper.myLooper()?.let { guest = Handler(it) }
             val verdict = PhoenixRuntime.applyOps(args[0] as? ByteArray, args[1] as? Int ?: 0) ?: return@before
             if (FrameVerdict.isDrop(verdict)) result = null
             else FrameVerdict.payload(verdict)?.let {
@@ -73,14 +77,24 @@ val phoenixFrames by tweak {
             paramTypes("long", "byte[]")
         }
     }
+    var runtime = 0L
     if (dispatch == null) log.w("No native dispatch method, incoming frames are not hooked")
     else dispatch.hook {
         before {
+            if (Looper.myLooper() == guest?.looper) runtime = args[0] as? Long ?: 0L
             val verdict = PhoenixRuntime.dispatch(args[0] as? Long ?: 0L, args[1] as? ByteArray) ?: return@before
             val payload = FrameVerdict.payload(verdict)
             if (payload != null) args[1] = payload
             else result = FrameVerdict.isTrue(verdict)
         }
+    }
+
+    // Runs on the guest thread like Discord's own frames, and skips the hook like plugin requests
+    if (dispatch != null) registerNativeAsyncMethod("valenced.phoenix.dispatch") { args ->
+        val handler = guest.takeIf { runtime != 0L } ?: throw Error("Phoenix has not received a frame yet")
+        val frame = Base64.decode(args[0] as String, Base64.NO_WRAP)
+        handler.post { XposedBridge.invokeOriginalMethod(dispatch, null, arrayOf(runtime, frame)) }
+        null
     }
 
     val uiProps by lazy {

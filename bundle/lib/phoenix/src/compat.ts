@@ -12,6 +12,7 @@ import {
     addFluxListener,
     addFluxPatch,
     attachFlux,
+    dispatchFlux,
     isFluxEventSupported,
     removeFluxListener,
     stores,
@@ -271,6 +272,8 @@ export function evalCompatPlugin(
                                 listener: (payload: FluxPayload) => unknown,
                             ) => removeFluxListener(type, listener),
                             dispatch: (payload?: FluxPayload) => {
+                                const sent = payload && dispatchFlux(payload)
+                                if (sent) return sent.catch(self.reportError)
                                 report(
                                     `valenced.discord.common.flux.Dispatcher.dispatch(${JSON.stringify(payload?.type)})`,
                                 )

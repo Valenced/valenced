@@ -1,5 +1,5 @@
 import { decodeUtf8 } from './bytes'
-import { on } from './gateway'
+import { dispatch, on, onSend } from './gateway'
 import { request } from './http'
 
 export interface FluxPayload {
@@ -134,8 +134,8 @@ export const stores: Record<
     },
 }
 
-// Client-local events, run from the HTTP requests they cause
-const localEvents = new Set(['TYPING_START_LOCAL'])
+// Client-local events, run from the HTTP requests and gateway messages they cause
+const localEvents = new Set(['TYPING_START_LOCAL', 'IDLE'])
 
 export const isFluxEventSupported = (type: string) =>
     type in fluxEvents || localEvents.has(type)
@@ -161,6 +161,13 @@ export function dispatchLocalFlux(payload: FluxPayload) {
             onError(error)
         }
     return result
+}
+
+/** Feeds an event with a gateway form to Phoenix. Returns `undefined` for other types. */
+export function dispatchFlux(payload: FluxPayload) {
+    const event = fluxEvents[payload.type]
+    if (event?.toGateway)
+        return dispatch(event.gateway, event.toGateway(payload, {}))
 }
 
 export function addFluxPatch(
@@ -216,6 +223,23 @@ export function attachFlux() {
             'MESSAGE_DELETE',
             'MESSAGE_DELETE_BULK',
         ].map(event => on(event, data => route(event, data)))
+        // Presence updates carry Phoenix's idle state, and a blocked IDLE keeps the client active
+        detach.push(
+            onSend(3, presence => {
+                const idle =
+                    dispatchLocalFlux({
+                        type: 'IDLE',
+                        idle: presence.afk === true,
+                        idleSince: presence.since,
+                    })?.idle === true
+                if (idle !== (presence.afk === true))
+                    return {
+                        ...presence,
+                        afk: idle,
+                        since: idle ? presence.since : 0,
+                    }
+            }),
+        )
     }
 
     let released = false

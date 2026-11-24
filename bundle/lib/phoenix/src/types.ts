@@ -27,6 +27,11 @@ export type DispatchListener = (
  */
 export type GatewayListener<T = any> = (data: T) => T | false | undefined | void
 
+/** Return `undefined` to send the message as is, `false` to drop it, or a `d` to replace it. */
+export type GatewaySendListener<T = any> = (
+    data: T,
+) => T | false | undefined | void
+
 /** Gateway handler the Phoenix host reads off `globalThis`. */
 export interface PhoenixGateway {
     onEvent?: (event: string, data: string) => string | false | undefined
