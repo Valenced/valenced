@@ -14,6 +14,7 @@ data class PluginManifest(
     /** Contributors, in the same format as [author]. */
     val contributors: List<String> = emptyList(),
     val icon: String? = null,
+    val settings: List<PluginSettingDefinition>? = null,
     /** Dependencies keyed by plugin ID. */
     val dependencies: Map<String, PluginDependency> = emptyMap(),
     val version: Version,

@@ -1,12 +1,26 @@
 // This should only be imported after start! Zustand imports React eagerly, our shim uses waitForModules.
 
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { useStore } from 'zustand/react'
 import { PluginFlags } from './constants'
 import { pEmitter } from './emitter'
 import { getInternalPluginMeta } from './registry'
 import { pluginStore, resolveFlags } from './store'
+import type { PluginSettingValue, PluginValueSettingsApi } from '../types'
 import type { AnyPlugin, PluginSource } from '.'
+
+export function useSetting<T extends PluginSettingValue>(
+    settings: PluginValueSettingsApi,
+    key: string,
+): [T, (value: T) => Promise<void>] {
+    const [value, setValue] = useState(() => settings.get<T>(key))
+    useEffect(() => settings.subscribe<T>(key, setValue), [settings, key])
+    const update = useCallback(
+        (next: T) => settings.set(key, next),
+        [settings, key],
+    )
+    return [value, update]
+}
 
 export function usePluginEnabledById(id: string): boolean {
     return useStore(pluginStore, state =>

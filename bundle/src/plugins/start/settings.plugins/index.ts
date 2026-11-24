@@ -56,7 +56,10 @@ registerInternalPlugin<{ jsonStorage: Storage }>(manifest, {
                     const target = pList.get(id)
                     if (!target) return false
 
-                    return Boolean(target.SettingsComponent)
+                    return Boolean(
+                        target.SettingsComponent ||
+                            target.manifest.settings?.length,
+                    )
                 },
                 openPluginSettings(id) {
                     if (!this.hasPluginSettings(id))

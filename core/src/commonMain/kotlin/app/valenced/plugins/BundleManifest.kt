@@ -29,6 +29,7 @@ data class BundleManifest(
         val author: String? = null,
         val contributors: List<String> = emptyList(),
         val icon: String? = null,
+        val settings: List<PluginSettingDefinition>? = null,
         val defaultSource: PluginSource? = null,
     )
 
@@ -58,6 +59,7 @@ private fun BundleManifest.Plugin.toPluginManifest(bundleVersion: Version): Plug
     requireValidPluginId(id)
     require(version == null || defaultSource != null) { "Only stubs can override the bundle version" }
 
+    settings?.validatePluginSettings()
     return PluginManifest(
         id = id,
         name = name ?: id,
@@ -65,6 +67,7 @@ private fun BundleManifest.Plugin.toPluginManifest(bundleVersion: Version): Plug
         author = author.orEmpty(),
         contributors = contributors,
         icon = icon,
+        settings = settings,
         dependencies = dependencies.entries.associate { (depId, dep) ->
             requireValidPluginId(depId)
             depId to PluginDependency(

@@ -13,6 +13,7 @@ import okio.Path
  * files/valenced/plugins/
  *   dist/<id>/          installed plugin files
  *   storage/<slot>/<id> per-slot plugin storage
+ *   settings/<id>.json  client-shared plugin settings
  *   states/             slot pointers and slot files
  *   repos/              repos.json, sources.json and the index caches
  * ```
@@ -33,6 +34,9 @@ class PluginPaths(
     /** Parent of the per-slot storage roots. */
     val storage: Path = root / "storage"
 
+    /** Plugin settings shared by slots and clients. */
+    val settings: Path = root / "settings"
+
     val states: Path = root / "states"
     val slots: Path = states / "slots"
 
@@ -46,6 +50,8 @@ class PluginPaths(
 
     /** Plugin storage root for one slot, so slots isolate plugin data as well as flags. */
     fun storageFor(slotId: String): Path = storage / slotId
+
+    fun settingsFile(pluginId: String): Path = settings / "$pluginId.json"
 
     /**
      * A plugin's storage directory in every slot that has one, whether or not this boot loaded that slot.

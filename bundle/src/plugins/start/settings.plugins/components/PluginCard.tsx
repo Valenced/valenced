@@ -441,7 +441,8 @@ export const InstalledPluginCard = memo(function InstalledPluginCard({
             }}
             actions={
                 <>
-                    {plugin.SettingsComponent && (
+                    {(plugin.SettingsComponent ||
+                        plugin.manifest.settings?.length) && (
                         <Pressable
                             onPress={() => {
                                 if (!started) showStartTooltip()

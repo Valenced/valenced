@@ -2,15 +2,19 @@ package app.valenced.plugins.external
 
 import app.valenced.plugins.PluginDependency
 import app.valenced.plugins.PluginManifest
+import app.valenced.plugins.PluginSettingDefinition
 import app.valenced.plugins.RESERVED_DEPENDENCY_IDS
 import app.valenced.plugins.Version
 import app.valenced.plugins.VersionRange
+import app.valenced.plugins.validatePluginSettings
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 const val MANIFEST_FILE = "manifest.json"
 
 const val MANIFEST_FORMAT = 1
+
+enum class ExternalPluginClient { REACT_NATIVE, PHOENIX }
 
 @Serializable
 data class ExternalManifest(
@@ -27,6 +31,7 @@ data class ExternalManifest(
     val version: String,
     /** Dependencies keyed by plugin ID: `{ "<id>": { "version"?: "<range>", "optional"?: true } }`. */
     val dependencies: Map<String, ExternalDependency> = emptyMap(),
+    val settings: List<PluginSettingDefinition>? = null,
     val dist: ExternalDist? = null,
 ) {
     fun toPluginManifest() = PluginManifest(
@@ -36,6 +41,7 @@ data class ExternalManifest(
         author = author,
         contributors = contributors,
         icon = icon?.let(::validatedPluginIcon),
+        settings = settings,
         dependencies = dependencies.entries.associate { (depId, dep) ->
             requireValidPluginId(depId)
             depId to PluginDependency(
@@ -58,8 +64,14 @@ data class ExternalDependency(
 @Serializable
 data class ExternalDist(
     val script: String? = null,
+    val phoenix: String? = null,
     val android: ExternalAndroidDist? = null,
-)
+) {
+    fun entryFor(client: ExternalPluginClient): String? = when (client) {
+        ExternalPluginClient.REACT_NATIVE -> script
+        ExternalPluginClient.PHOENIX -> phoenix
+    }
+}
 
 @Serializable
 data class ExternalAndroidDist(
@@ -101,6 +113,7 @@ fun ExternalManifest.validate() {
             "Plugin '$id': the '$depId' dependency cannot be optional"
         }
     }
+    settings?.validatePluginSettings()
 }
 
 private val PLUGIN_ID_REGEX = Regex("[a-zA-Z0-9.-]+")

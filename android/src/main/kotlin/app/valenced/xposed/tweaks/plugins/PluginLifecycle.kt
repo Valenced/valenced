@@ -1,5 +1,6 @@
 package app.valenced.xposed.tweaks.plugins
 
+import app.valenced.core.toNative
 import app.valenced.Logger
 import app.valenced.logger
 import app.valenced.plugins.DependencyProblemPayload
@@ -7,6 +8,8 @@ import app.valenced.plugins.Plugin
 import app.valenced.plugins.PluginErrorCodes
 import app.valenced.plugins.PluginFlags
 import app.valenced.plugins.PluginScope
+import app.valenced.plugins.PluginSettings
+import app.valenced.plugins.PluginSettingsStore
 import app.valenced.plugins.PluginStatesStore
 import app.valenced.plugins.PluginSystemError
 import app.valenced.plugins.pluginLog
@@ -21,6 +24,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 private inline val loaded get() = pluginRegistry.loaded
 
@@ -55,6 +60,37 @@ internal class PluginScopeImpl(
                 PluginErrorCodes.STORAGE_FAILED,
                 "Plugin storage directory is not writable: $this",
             )
+        }
+    }
+
+    override val settings: PluginSettings = object : PluginSettings {
+        override fun get(key: String): Any? = settingValue(key).toNative()
+
+        override fun set(key: String, value: Any?) {
+            val json = settingJson(value)
+            PluginSettingsStore.write(pluginPaths(appInfo.dataDir), manifest.id, manifest.settings.orEmpty(), key, json)
+            val updated = settingValue(key).toNative()
+            pluginSettingsEvents.emit(manifest.id, key, updated)
+            pluginJobScope.launch {
+                callJSMethod("valenced.plugins.settings.update", listOf(manifest.id, key, updated))
+            }
+        }
+
+        override fun subscribe(key: String, listener: (Any?) -> Unit): AutoCloseable {
+            manifest.settings.orEmpty().firstOrNull { it.key == key }
+                ?: throw IllegalArgumentException("Unknown setting '$key' for '${manifest.id}'")
+            return pluginSettingsEvents.subscribe(manifest.id, key, listener)
+        }
+
+        private fun settingValue(key: String): JsonElement =
+            PluginSettingsStore.read(pluginPaths(appInfo.dataDir), manifest.id, manifest.settings.orEmpty())[key]
+                ?: throw IllegalArgumentException("Unknown setting '$key' for '${manifest.id}'")
+
+        private fun settingJson(value: Any?): JsonElement = when (value) {
+            is String -> JsonPrimitive(value)
+            is Boolean -> JsonPrimitive(value)
+            is Number -> JsonPrimitive(value)
+            else -> throw IllegalArgumentException("Setting values must be strings, numbers, or booleans")
         }
     }
 

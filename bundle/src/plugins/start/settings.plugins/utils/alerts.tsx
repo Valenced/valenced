@@ -5,6 +5,7 @@ import {
 import { Design } from '@valenced/discord/design'
 import { RootNavigationRef } from '@valenced/discord/modules/main_tabs_v2'
 import {
+    clearPluginSettings,
     deleteStorageForPlugin,
     getPluginDependents,
     isPluginEnabledInActiveSlot,
@@ -35,6 +36,7 @@ export function showPluginClearDataConfirmation(
             await deleteStorageForPlugin(plugin)
             // Trigger update for JSON storage
             await deleteJsonStorageForPlugin(plugin)
+            await clearPluginSettings(plugin.manifest.id)
         } catch (e) {
             alert(getErrorStack(e))
         }
@@ -87,7 +89,11 @@ function getCascadeDisabledDependents(plugin: AnyPlugin) {
 }
 
 export function openPluginSettings(plugin: AnyPlugin) {
-    if (!plugin.SettingsComponent || !isPluginStarted(plugin)) return
+    if (
+        (!plugin.SettingsComponent && !plugin.manifest.settings?.length) ||
+        !isPluginStarted(plugin)
+    )
+        return
 
     const navigation = RootNavigationRef.getRootNavigationRef()
     if (navigation.isReady()) navigation.navigate(plugin.manifest.id)

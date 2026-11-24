@@ -430,7 +430,7 @@ function PluginActions({
             justify="space-around"
             style={{ paddingHorizontal: 8, paddingVertical: 16 }}
         >
-            {plugin.SettingsComponent && (
+            {(plugin.SettingsComponent || plugin.manifest.settings?.length) && (
                 <Pressable
                     onPress={() => {
                         if (!started) showStartTooltip()

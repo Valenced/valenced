@@ -99,7 +99,11 @@ const Filters: FilterAndSortActionSheetProps['filters'] = {
         icon: getAssetIdByName('SettingsIcon')!,
         desc: 'Can be toggled or have settings that can be configured.',
         filter: (plugin, meta) =>
-            !isPluginEssential(meta) || plugin.SettingsComponent !== undefined,
+            Boolean(
+                !isPluginEssential(meta) ||
+                    plugin.SettingsComponent !== undefined ||
+                    plugin.manifest.settings?.length,
+            ),
     },
     Internal: {
         icon: ValencedIcon,
@@ -419,9 +423,7 @@ function Screen({ match, onBrowse }: Partial<PluginsPageProps>) {
                 ListHeaderComponent={ListHeader}
                 plugins={plugins}
             />
-            <BrowseFloatingActionButton
-                onBrowse={onBrowse}
-            />
+            <BrowseFloatingActionButton onBrowse={onBrowse} />
         </>
     )
 }

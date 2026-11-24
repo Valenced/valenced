@@ -35,6 +35,7 @@ import {
     requirePluginStartableState,
 } from './predicates'
 import { getInternalPluginMeta, pList } from './registry'
+import { createPluginSettingsApi } from './settings'
 import {
     addPluginFlags,
     adoptPluginFlags,
@@ -107,6 +108,7 @@ function tryPreparePluginPreInit(plugin: AnyPlugin) {
             meta.cleanups.push(...items)
         },
         plugin,
+        settings: createPluginSettingsApi(plugin.manifest.id),
         unscoped: uapi,
         decorate: decorator => {
             addPluginApiDecorator(pDecoratorsPreInit, plugin, decorator)

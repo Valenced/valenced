@@ -18,6 +18,7 @@ import {
 import { lookupGeneratedIconComponent } from '@valenced/utils/discord'
 import { useLayoutEffect } from 'react'
 import { Setting } from '../settings/constants'
+import GeneratedPluginSettings from './components/GeneratedPluginSettings'
 import defer * as NavigatorHeaderWithIcon from './components/NavigatorHeaderWithIcon'
 import { PluginFileInstallConfirmAlert } from './components/PluginInstallConfirmAlert'
 import PluginInstallFailedAlert from './components/PluginInstallFailedAlert'
@@ -36,7 +37,7 @@ pEmitter.on('statusUpdate', plugin => {
     // statusUpdate covers every phase, and only a started plugin registers its route
     if (!isPluginStarted(plugin)) return
 
-    if (plugin.SettingsComponent) {
+    if (plugin.SettingsComponent || plugin.manifest.settings?.length) {
         const api = plugin.api as PluginApi<any>
         const Component = plugin.SettingsComponent!
 
@@ -60,7 +61,12 @@ pEmitter.on('statusUpdate', plugin => {
                     })
             }, [])
 
-            return <Component api={api} />
+            return (
+                <>
+                    <GeneratedPluginSettings api={api} />
+                    {Component && <Component api={api} />}
+                </>
+            )
         }
 
         api.cleanup(

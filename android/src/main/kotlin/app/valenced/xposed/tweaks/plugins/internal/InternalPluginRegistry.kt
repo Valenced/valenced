@@ -6,6 +6,7 @@ import app.valenced.plugins.PluginManifest
 import app.valenced.plugins.RESERVED_DEPENDENCY_IDS
 import app.valenced.plugins.plugin
 import app.valenced.plugins.repos.PluginSource
+import app.valenced.xposed.BuildConfig
 import app.valenced.xposed.tweaks.bundleManifest
 import app.valenced.xposed.tweaks.plugins.PluginFactory
 
@@ -59,7 +60,8 @@ private fun PluginManifest.withReservedDependencies(): PluginManifest {
 }
 
 internal val internalPlugins: List<PluginFactory> by lazy {
-    listOf(apiProviderPlugin, discordProviderPlugin, recoveryPlugin, noTrackPlugin, preventOtaUpdatesPlugin)
+    listOf(apiProviderPlugin, discordProviderPlugin, recoveryPlugin, noTrackPlugin, preventOtaUpdatesPlugin) +
+        listOfNotNull(examplePlugin.takeIf { BuildConfig.DEBUG })
 }
 
 /** Native internal plugins and bundled (JS-only) ones from [bundleManifest]. */

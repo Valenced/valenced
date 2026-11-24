@@ -28,6 +28,7 @@ data class ManifestPayload @OptIn(ExperimentalSerializationApi::class) construct
     val author: String,
     val contributors: List<String>,
     val icon: String?,
+    val settings: List<PluginSettingDefinition>?,
     val dependencies: Map<String, DependencyPayload>,
     val version: VersionPayload,
 )
@@ -70,6 +71,7 @@ fun PluginManifest.toPayload(): ManifestPayload = ManifestPayload(
     author = author,
     contributors = contributors,
     icon = icon,
+    settings = settings,
     dependencies = dependencies.mapValues { (_, dep) ->
         DependencyPayload(dep.version.toString(), dep.optional)
     },

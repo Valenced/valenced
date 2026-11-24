@@ -22,6 +22,9 @@ interface PluginScope : HostScope {
      */
     val storageDir: File
 
+    /** Client-shared values declared in the plugin manifest. */
+    val settings: PluginSettings
+
     /** Whether this plugin is currently enabled. */
     val enabled: Boolean
 
