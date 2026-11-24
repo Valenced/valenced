@@ -139,6 +139,16 @@ val phoenixSettings by tweak {
         null
     }
 
+    registerNativeMethod("valenced.phoenix.showBadge") { args ->
+        Handler(Looper.getMainLooper()).post {
+            val activity = foreground.get()
+            if (activity == null || activity.isFinishing) log.w("No foreground activity to show a badge on")
+            else PhoenixSettingsScreen(this, activity, args.getOrNull(0) as? Map<*, *>, null)
+                .alertBadge(args.getOrNull(1) as? Map<*, *> ?: emptyMap<Any?, Any?>())
+        }
+        null
+    }
+
     // Recovery registers its handler late and on the launcher activity, which Phoenix finishes
     onLaunchDecision { phoenix ->
         if (phoenix) registerNativeMethod("valenced.alertError") { args ->
@@ -1235,6 +1245,31 @@ private class PhoenixSettingsScreen(
                 }
             }
         }, LinearLayout.LayoutParams(MATCH_PARENT, dp(40)).apply { topMargin = dp(if (index == 0) 24 else 12) })
+        modal.show()
+    }
+
+    fun alertBadge(badge: Map<*, *>) {
+        val (modal, content) = overlay(false)
+        content.addView(
+            ImageView(ctx).apply {
+                setImageDrawable(icon(badge["icon"] as? String, primary)?.apply { if (badge["tint"] == true) setTint(primary) })
+            },
+            LinearLayout.LayoutParams(dp(96), dp(96)).apply { gravity = Gravity.CENTER_HORIZONTAL },
+        )
+        content.addView(
+            text("${badge["label"]}", primary, 20f, semibold).apply { gravity = Gravity.CENTER },
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) },
+        )
+        content.addView(
+            text("${badge["description"]}", primary, 16f).apply { gravity = Gravity.CENTER },
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(8) },
+        )
+        content.addView(LinearLayout(ctx).apply {
+            gravity = Gravity.CENTER
+            background = RippleDrawable(ColorStateList.valueOf(pressed), shape(brand, 8), null)
+            addView(text("OK", white, 16f, semibold))
+            setOnClickListener { modal.dismiss() }
+        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(40)).apply { topMargin = dp(24) })
         modal.show()
     }
 

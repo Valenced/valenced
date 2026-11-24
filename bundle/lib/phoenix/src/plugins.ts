@@ -31,12 +31,20 @@ interface RunningPlugin {
 }
 
 const plugins = new Map<string, NativePlugin>()
+const internalPlugins = new Map<string, PhoenixPluginOptions>()
 const running = new Map<string, RunningPlugin>()
 const settingListeners = new Map<string, Set<(value: unknown) => void>>()
 const settingValues = new Map<string, Record<string, unknown>>()
 let runtimeSlotId: string | undefined
 
 const phoenixApi = { ...phoenix, ...gateway, ui, bytes, http }
+
+export function registerInternalPhoenixPlugin(
+    id: string,
+    options: PhoenixPluginOptions,
+) {
+    internalPlugins.set(id, options)
+}
 
 /** Starts enabled plugins with a `dist.phoenix` artifact from the native registry. */
 export async function startExternalPhoenixPlugins() {
@@ -68,13 +76,14 @@ async function refreshPlugins() {
             state?.enabled ??
             (descriptor.essential === true ||
                 descriptor.enabledByDefault === true)
-        if (enabled && descriptor.script) await startPlugin(descriptor)
+        if (enabled) await startPlugin(descriptor)
     }
 }
 
 async function startPlugin(plugin: NativePlugin) {
     const id = plugin.manifest.id
-    if (running.has(id) || !plugin.script) return
+    const internal = internalPlugins.get(id)
+    if (running.has(id) || (!plugin.script && !internal)) return
 
     const views = createViews()
     const cleanups: Array<() => unknown> = [views.dispose]
@@ -136,7 +145,7 @@ async function startPlugin(plugin: NativePlugin) {
         const module = plugin.compat
             ? {
                   default: (await import('./compat')).evalCompatPlugin(
-                      plugin.script,
+                      plugin.script!,
                       scope,
                       () => stopPlugin(id),
                   ),
@@ -155,7 +164,7 @@ async function startPlugin(plugin: NativePlugin) {
                   (options: PhoenixPluginOptions) => options,
               ) as { default?: PhoenixPluginOptions } | undefined)
 
-        const options = module?.default
+        const options = internal ?? module?.default
         if (!options || typeof options !== 'object')
             throw new Error(
                 'Phoenix plugin bundle must return an options object as default',
@@ -209,7 +218,7 @@ async function onStateUpdate(
 
     if (flags.enabled) {
         const plugin = plugins.get(id)
-        if (plugin?.script) await startPlugin(plugin)
+        if (plugin) await startPlugin(plugin)
     } else {
         await stopPlugin(id)
     }
