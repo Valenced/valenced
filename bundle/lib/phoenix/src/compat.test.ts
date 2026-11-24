@@ -240,6 +240,34 @@ describe('compat host', () => {
         expect(globalThis.__valencedPhoenixGateway!.onEvent).toBeUndefined()
     })
 
+    test('passes unmapped gateway events through in their gateway shape', async () => {
+        await start(
+            'test.unmapped',
+            rnPlugin(`{
+                start() {
+                    valenced.discord.flux.onFluxEventDispatched('TYPING_START', p => ({ ...p, userId: 'x' }))
+                    valenced.discord.common.flux.Dispatcher.subscribe('TYPING_START', p => { globalThis.typing = p })
+                },
+            }`),
+        )
+        const result = gateway('TYPING_START', {
+            channel_id: 'c',
+            user_id: 'u',
+        })
+        await stop('test.unmapped')
+
+        expect(result).toBeUndefined()
+        expect((globalThis as any).typing).toEqual({
+            type: 'TYPING_START',
+            channel_id: 'c',
+            channelId: 'c',
+            user_id: 'u',
+            userId: 'x',
+        })
+        expect(failures('test.unmapped')).toEqual([])
+        expect(globalThis.__valencedPhoenixGateway!.onEvent).toBeUndefined()
+    })
+
     test('maps IDLE onto presence updates and dispatches gateway events', async () => {
         const frames = globalThis.__valencedPhoenixFrames!
         const message = new ByteWriter()

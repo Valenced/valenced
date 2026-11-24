@@ -101,6 +101,28 @@ let currentUser: any
 let attached = 0
 let detach: Array<() => void> = []
 
+// Gateway events in Phoenix's registry, the same in 356207 and 357200
+const gatewayEvents = new Set(
+    'ACTIVITY_START ACTIVITY_USER_ACTION APPLICATION_COMMAND_AUTOCOMPLETE_RESPONSE APPLICATION_COMMAND_PERMISSIONS_UPDATE AUTHENTICATOR_CREATE AUTHENTICATOR_DELETE AUTH_SESSION_CHANGE AUTO_MODERATION_ACTION_EXECUTION AUTO_MODERATION_CONTENT_DELETED AUTO_MODERATION_MENTION_RAID_DETECTION AUTO_MODERATION_RULE_CREATE AUTO_MODERATION_RULE_DELETE AUTO_MODERATION_RULE_UPDATE CALL_CREATE CALL_DELETE CALL_UPDATE CHANNEL_CREATE CHANNEL_DELETE CHANNEL_INFO CHANNEL_MEMBER_COUNT_UPDATE CHANNEL_PINS_UPDATE CHANNEL_RECIPIENT_ADD CHANNEL_RECIPIENT_REMOVE CHANNEL_SYNC CHANNEL_UNREAD_UPDATE CHANNEL_UPDATE CONVERSATION_SUMMARY_UPDATE CREATOR_MONETIZATION_RESTRICTIONS_UPDATE DELETED_ENTITY_IDS DM_SETTINGS_UPSELL_SHOW EMBEDDED_ACTIVITY_UPDATE_V2 EXPERIMENT_SESSION_OVERRIDE_CREATE EXPERIMENT_SESSION_OVERRIDE_DELETE FORUM_UNREADS FRIEND_SUGGESTION_CREATE FRIEND_SUGGESTION_DELETE GAME_RELATIONSHIP_ADD GAME_RELATIONSHIP_REMOVE GAME_SERVER_CREATE GAME_SERVER_DELETE GAME_SERVER_UPDATE GENERIC_PUSH_NOTIFICATION_SENT GIFT_CODE_UPDATE GUILD_APPLICATION_COMMAND_INDEX_UPDATE GUILD_AUDIT_LOG_ENTRY_CREATE GUILD_BAN_ADD GUILD_BAN_REMOVE GUILD_BULK_BAN_UPDATE GUILD_CREATE GUILD_DELETE GUILD_DIRECTORY_ENTRY_CREATE GUILD_DIRECTORY_ENTRY_DELETE GUILD_DIRECTORY_ENTRY_UPDATE GUILD_EMOJIS_UPDATE GUILD_FEATURE_ACK GUILD_JOIN_REQUEST_CREATE GUILD_JOIN_REQUEST_DELETE GUILD_JOIN_REQUEST_UPDATE GUILD_MEMBERS_CHUNK GUILD_MEMBER_ADD GUILD_MEMBER_LIST_UPDATE GUILD_MEMBER_REMOVE GUILD_MEMBER_UPDATE GUILD_OFFICIAL_GAME_APPLICATIONS_UPDATE GUILD_PRUNE_UPDATE GUILD_ROLE_CREATE GUILD_ROLE_DELETE GUILD_ROLE_UPDATE GUILD_ROOM_CONNECT GUILD_ROOM_DISCONNECT GUILD_ROOM_UPDATE GUILD_SCHEDULED_EVENT_CREATE GUILD_SCHEDULED_EVENT_DELETE GUILD_SCHEDULED_EVENT_EXCEPTION_CREATE GUILD_SCHEDULED_EVENT_EXCEPTION_DELETE GUILD_SCHEDULED_EVENT_EXCEPTION_UPDATE GUILD_SCHEDULED_EVENT_UPDATE GUILD_SCHEDULED_EVENT_USER_ADD GUILD_SCHEDULED_EVENT_USER_REMOVE GUILD_SOUNDBOARD_SOUNDS_UPDATE GUILD_SOUNDBOARD_SOUND_CREATE GUILD_SOUNDBOARD_SOUND_DELETE GUILD_SOUNDBOARD_SOUND_UPDATE GUILD_STICKERS_UPDATE GUILD_UPDATE INITIAL_GUILD INTERACTION_CREATE INTERACTION_FAILURE INTERACTION_IFRAME_MODAL_CREATE INTERACTION_MODAL_CREATE INTERACTION_SUCCESS INVITE_CREATE INVITE_DELETE LAST_MESSAGES LIBRARY_APPLICATION_UPDATE MESSAGE_ACK MESSAGE_CREATE MESSAGE_DELETE MESSAGE_DELETE_BULK MESSAGE_POLL_VOTE_ADD MESSAGE_POLL_VOTE_ADD_MANY MESSAGE_POLL_VOTE_REMOVE MESSAGE_REACTION_ADD MESSAGE_REACTION_ADD_MANY MESSAGE_REACTION_REMOVE MESSAGE_REACTION_REMOVE_ALL MESSAGE_REACTION_REMOVE_EMOJI MESSAGE_REQUEST_NOTIFICATION_SENT MESSAGE_UPDATE NOTIFICATION_CENTER_ITEMS_ACK NOTIFICATION_CENTER_ITEM_COMPLETED NOTIFICATION_CENTER_ITEM_CREATE NOTIFICATION_CENTER_ITEM_DELETE NOTIFICATION_SETTINGS_UPDATE OAUTH2_TOKEN_CREATE OAUTH2_TOKEN_DELETE ORBS_ARCADE_GAME_STATE_UPDATE PASSIVE_UPDATE_V2 PRESENCES_REPLACE PRESENCE_UPDATE QUESTS_USER_COMPLETION_UPDATE QUESTS_USER_STATUS_UPDATE QUEST_PREVIEW_UPDATE REACTION_NOTIFICATION_SENT READY READY_SUPPLEMENTAL RECENT_MENTION_DELETE RELATIONSHIP_ADD RELATIONSHIP_REMOVE RELATIONSHIP_UPDATE RESUMED SAVED_MESSAGE_CREATE SAVED_MESSAGE_DELETE SESSIONS_REPLACE SOUNDBOARD_SOUNDS STAGE_INSTANCE_CREATE STAGE_INSTANCE_DELETE STAGE_INSTANCE_UPDATE STATE_UPDATE STREAM_CREATE STREAM_DELETE STREAM_SERVER_UPDATE STREAM_UPDATE THREAD_CREATE THREAD_DELETE THREAD_LIST_SYNC THREAD_MEMBERS_UPDATE THREAD_MEMBER_LIST_UPDATE THREAD_MEMBER_UPDATE THREAD_UPDATE TYPING_START USER_APPLICATION_IDENTITY_REMOVE USER_APPLICATION_IDENTITY_UPDATE USER_APPLICATION_REMOVE USER_APPLICATION_UPDATE USER_BADGE_STATE_UPDATE USER_CONNECTIONS_CALLBACK USER_CONNECTIONS_LINK_CALLBACK USER_CONNECTIONS_UPDATE USER_DISCORD_ACHIEVEMENT_STATE_UPDATE USER_GUILD_SETTINGS_UPDATE USER_NON_CHANNEL_ACK USER_NOTE_UPDATE USER_REQUIRED_ACTION_UPDATE USER_SETTINGS_PROTO_UPDATE USER_UPDATE VIRTUAL_CURRENCY_BALANCE_UPDATE VOICE_CHANNEL_EFFECT_SEND VOICE_CHANNEL_START_TIME_UPDATE VOICE_CHANNEL_STATUS_UPDATE VOICE_SERVER_UPDATE VOICE_STATE_UPDATE VOICE_STATE_UPDATE_BATCH WEBHOOKS_UPDATE WISHLIST_ITEM_PURCHASED'.split(
+        ' ',
+    ),
+)
+const storeEvents = [
+    'READY',
+    'READY_SUPPLEMENTAL',
+    'GUILD_CREATE',
+    'CHANNEL_CREATE',
+    'CHANNEL_UPDATE',
+    'CHANNEL_DELETE',
+    'USER_UPDATE',
+    'MESSAGE_CREATE',
+    'MESSAGE_UPDATE',
+    'MESSAGE_DELETE',
+    'MESSAGE_DELETE_BULK',
+]
+// Gateway listeners for unmapped events, while a plugin patches or subscribes to one
+const unmapped = new Map<string, () => void>()
+
 export const stores: Record<
     string,
     Record<string, (...args: any[]) => unknown>
@@ -138,7 +160,7 @@ export const stores: Record<
 const localEvents = new Set(['TYPING_START_LOCAL', 'IDLE'])
 
 export const isFluxEventSupported = (type: string) =>
-    type in fluxEvents || localEvents.has(type)
+    type in fluxEvents || localEvents.has(type) || gatewayEvents.has(type)
 
 /** Runs patches and listeners for a client-local event. Returns `undefined` when a patch blocks it. */
 export function dispatchLocalFlux(payload: FluxPayload) {
@@ -178,8 +200,10 @@ export function addFluxPatch(
     let set = type === undefined ? anyPatches : patches.get(type)
     if (!set) patches.set(type!, (set = new Map()))
     set.set(patch, onError)
+    if (type !== undefined) listenUnmapped(type)
     return () => {
         set.delete(patch)
+        if (type !== undefined) unlistenUnmapped(type)
     }
 }
 
@@ -191,6 +215,7 @@ export function addFluxListener(
     let set = listeners.get(type)
     if (!set) listeners.set(type, (set = new Map()))
     set.set(listener, onError)
+    listenUnmapped(type)
     return () => removeFluxListener(type, listener)
 }
 
@@ -199,6 +224,27 @@ export function removeFluxListener(
     listener: (payload: FluxPayload) => unknown,
 ) {
     listeners.get(type)?.delete(listener)
+    unlistenUnmapped(type)
+}
+
+function listenUnmapped(type: string) {
+    if (
+        type in fluxEvents ||
+        storeEvents.includes(type) ||
+        unmapped.has(type) ||
+        !gatewayEvents.has(type)
+    )
+        return
+    unmapped.set(
+        type,
+        on(type, data => route(type, data)),
+    )
+}
+
+function unlistenUnmapped(type: string) {
+    if (patches.get(type)?.size || listeners.get(type)?.size) return
+    unmapped.get(type)?.()
+    unmapped.delete(type)
 }
 
 export function attachFlux() {
@@ -210,19 +256,7 @@ export function attachFlux() {
             },
             () => {},
         )
-        detach = [
-            'READY',
-            'READY_SUPPLEMENTAL',
-            'GUILD_CREATE',
-            'CHANNEL_CREATE',
-            'CHANNEL_UPDATE',
-            'CHANNEL_DELETE',
-            'USER_UPDATE',
-            'MESSAGE_CREATE',
-            'MESSAGE_UPDATE',
-            'MESSAGE_DELETE',
-            'MESSAGE_DELETE_BULK',
-        ].map(event => on(event, data => route(event, data)))
+        detach = storeEvents.map(event => on(event, data => route(event, data)))
         // Presence updates carry Phoenix's idle state, and a blocked IDLE keeps the client active
         detach.push(
             onSend(3, presence => {
@@ -257,12 +291,28 @@ export function attachFlux() {
 }
 
 function route(event: string, data: any) {
-    const type = fluxTypes[event]
+    const type =
+        fluxTypes[event] ?? (gatewayEvents.has(event) ? event : undefined)
     const specific = type ? patches.get(type) : undefined
     const subscribed = type ? listeners.get(type) : undefined
 
     if (type && (anyPatches.size || specific?.size || subscribed?.size)) {
-        const { toFlux, toGateway } = fluxEvents[type]!
+        // Unmapped events keep their gateway shape, with camelCase copies of snake_case keys. Observe only.
+        const { toFlux, toGateway } = fluxEvents[type] ?? {
+            toFlux: (data: any): FluxPayload => {
+                const payload: FluxPayload = Array.isArray(data)
+                    ? { type, data }
+                    : { ...data, type }
+                for (const key of Object.keys(payload))
+                    if (key.includes('_'))
+                        payload[
+                            key.replace(/_([a-z])/g, (_, c: string) =>
+                                c.toUpperCase(),
+                            )
+                        ] ??= payload[key]
+                return payload
+            },
+        }
         let payload: FluxPayload | undefined | void = toFlux(data)
 
         for (const [patch, onError] of [...anyPatches, ...(specific ?? [])]) {
