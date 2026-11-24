@@ -23,7 +23,7 @@ data class BundleManifest(
         val dependencies: Map<String, Dependency> = emptyMap(),
         /** Overrides the bundle version. Stubs ([defaultSource]) only. */
         val version: String? = null,
-        // Metadata for stubs only.
+        // Metadata. Native lists plugins before JS can fill these in, and Phoenix never does.
         val name: String? = null,
         val description: String? = null,
         val author: String? = null,

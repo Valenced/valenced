@@ -24,7 +24,7 @@ interface BundleManifestPlugin {
     dependencies?: Record<string, { version?: string }>
     /** Overrides the bundle version. Stubs only. */
     version?: string
-    // Metadata, stubs only. Native shows a restored stub before JS can fill these in.
+    // Metadata. Native lists plugins before JS can fill these in, and Phoenix never does.
     name?: string
     description?: string
     author?: string
@@ -126,17 +126,14 @@ export async function getInternalPluginManifests(
             manifests.push({
                 id: manifest.id,
                 ...(version !== undefined && { version }),
-                ...(defaultSource && {
-                    name: manifest.name,
-                    description: manifest.description,
-                    author:
-                        manifest.author &&
-                        formatPluginContributor(manifest.author),
-                    contributors: manifest.contributors?.map(
-                        formatPluginContributor,
-                    ),
-                    icon: manifest.icon,
-                }),
+                name: manifest.name,
+                description: manifest.description,
+                author:
+                    manifest.author && formatPluginContributor(manifest.author),
+                contributors: manifest.contributors?.map(
+                    formatPluginContributor,
+                ),
+                icon: manifest.icon,
                 ...(manifest.essential && { essential: true }),
                 ...((enabledByDefault === 'dev' ? dev : enabledByDefault) && {
                     enabledByDefault: true,

@@ -296,9 +296,7 @@ private class PhoenixSettingsScreen(
     ) {
         val slots = call("valenced.plugins.states.getSlots") as Map<*, *>
         val states = (call("valenced.plugins.states.read") as Map<*, *>)[slots["active"]] as? Map<*, *>
-        // Bundle entries without metadata, the RN bundle names them at runtime
         val all = (call("valenced.plugins.list") as List<*>).map { it as Map<*, *> }
-            .filter { (it["manifest"] as Map<*, *>).let { manifest -> manifest["name"] != manifest["id"] } }
         val configurable = all.associate { (it["manifest"] as Map<*, *>)["id"] to settingsFor(it).isNotEmpty() }
         val enabled = all.associate { plugin ->
             val id = (plugin["manifest"] as Map<*, *>)["id"]
@@ -313,7 +311,7 @@ private class PhoenixSettingsScreen(
                     "Disabled" -> enabled[id] != true
                     "Has Errors" -> plugin["failed"] == true || (plugin["errors"] as? List<*>).orEmpty().isNotEmpty()
                     "Pending Reload" -> (states?.get(id) as? Map<*, *>)?.get("pendingReload") == true
-                    "Configurable" -> plugin["essential"] != true || configurable[id] == true
+                    "Configurable" -> plugin["essential"] != true || (plugin["manifest"] as Map<*, *>)["settings"] != null
                     else -> plugin["internal"] == true
                 }
             }

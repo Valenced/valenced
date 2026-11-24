@@ -41,17 +41,27 @@ describe('getInternalPluginManifests', () => {
         })
     })
 
-    it('drops everything native does not read', async () => {
-        await plugin('start', 'settings', {
-            id: 'valenced.settings',
-            name: 'Settings',
-            description: 'Settings UI for Valenced.',
-            author: 'Valenced',
-            icon: 'SettingsIcon',
+    it('keeps the metadata of every plugin, which Phoenix lists', async () => {
+        await plugin('start', 'staff-settings', {
+            id: 'valenced.staff-settings',
+            name: 'Staff Settings',
+            description: "Allows accessing Discord's Staff Settings.",
+            author: { name: 'Valenced' },
+            icon: 'StaffBadgeIcon',
+            enabledByDefault: true,
         })
 
         const plugins = await getInternalPluginManifests(root)
-        expect(plugins).toEqual([{ id: 'valenced.settings' }])
+        expect(plugins).toEqual([
+            {
+                id: 'valenced.staff-settings',
+                name: 'Staff Settings',
+                description: "Allows accessing Discord's Staff Settings.",
+                author: 'Valenced',
+                icon: 'StaffBadgeIcon',
+                enabledByDefault: true,
+            },
+        ])
     })
 
     // Replaces the type checking lost when cross-plugin ID imports were removed.
