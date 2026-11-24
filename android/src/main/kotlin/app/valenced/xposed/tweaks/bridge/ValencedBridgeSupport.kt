@@ -9,6 +9,7 @@ import app.valenced.xposed.*
 import app.valenced.xposed.tweaks.bridge.ValencedBridgeRegistry.dispatchScope
 import app.valenced.xposed.tweaks.bridge.ValencedBridgeRegistry.jsCallableLock
 import app.valenced.xposed.tweaks.bridge.ValencedBridgeRegistry.toNativeObject
+import app.valenced.xposed.tweaks.phoenixLaunched
 import kotlinx.coroutines.*
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
@@ -52,8 +53,13 @@ object ValencedBridgeRegistry : ValencedBridge {
     internal const val NATIVE_METHOD_NAME_KEY = "method"
     internal const val NATIVE_METHOD_ARGS_KEY = "args"
 
+    /** Delivers a JS-callable invocation. Set by the Phoenix runtime, null under React Native. */
+    @Volatile
+    internal var jsTransport: ((module: String, method: String, args: List<Any?>) -> Unit)? = null
+
     override val isReady: Boolean
-        get() = reactInstanceCallFunctionOnModule != null && reactInstance?.get() != null
+        get() = jsTransport != null ||
+            (reactInstanceCallFunctionOnModule != null && reactInstance?.get() != null)
 
     override fun registerMethod(name: String, handler: MethodCallback) {
         if (methods.containsKey(name) || asyncMethods.containsKey(name))
@@ -68,9 +74,12 @@ object ValencedBridgeRegistry : ValencedBridge {
     }
 
     override suspend fun callJSMethod(name: String, args: List<Any?>): Any? {
-        val callFn = reactInstanceCallFunctionOnModule
+        val transport = jsTransport
+        val callFn = if (transport != null) null
+        else reactInstanceCallFunctionOnModule
             ?: error("Bridge not ready; no captured method ReactInstance.callFunctionOnModule")
-        val instance = reactInstance?.get()
+        val instance = if (transport != null) null
+        else reactInstance?.get()
             ?: error("Bridge not ready; no captured ReactInstance")
 
         val deferred = CompletableDeferred<Any?>()
@@ -83,13 +92,52 @@ object ValencedBridgeRegistry : ValencedBridge {
             try {
                 // JS-side errors surface asynchronously on the CPP thread and are uncatchable here.
                 // [args.toNativeObject()] can throw however, so we catch it and remove the deferred.
-                callFn.invoke(instance, JS_CALLABLE_MODULE_NAME, name, args.toNativeObject())
+                if (transport != null) transport(JS_CALLABLE_MODULE_NAME, name, args)
+                else callFn!!.invoke(instance, JS_CALLABLE_MODULE_NAME, name, args.toNativeObject())
             } catch (e: Throwable) {
                 jsCallableReturnQueue.remove(deferred)
                 throw e
             }
         }
         return deferred.await()
+    }
+
+    /**
+     * Runs a sync bridge method and returns the `{result | error}` payload.
+     *
+     * The Phoenix transport marshals through JSON, so unlike [tryDispatchNative] this returns
+     * plain Kotlin values rather than React's native object graph.
+     */
+    internal fun dispatch(name: String, args: List<Any?>): Map<String, Any?> = try {
+        val handler = methods[name] ?: throw Error(
+            if (name in asyncMethods) "Native bridge method is async-only: $name"
+            else "Native bridge method not registered: $name"
+        )
+        mapOf("result" to handler(args))
+    } catch (e: Throwable) {
+        mapOf("error" to e.stackTraceToString())
+    }
+
+    /** [dispatch], off the caller's thread when [name] was registered with [registerAsyncMethod]. */
+    internal fun dispatchAsync(name: String, args: List<Any?>, complete: (Map<String, Any?>) -> Unit) {
+        val handler = asyncMethods[name]
+        if (handler == null) {
+            complete(dispatch(name, args))
+            return
+        }
+
+        dispatchScope.launch {
+            val response = try {
+                mapOf("result" to handler(args))
+            } catch (e: Throwable) {
+                mapOf("error" to e.stackTraceToString())
+            }
+            try {
+                complete(response)
+            } catch (e: Throwable) {
+                log.e("Failed to deliver async bridge result for $name", e)
+            }
+        }
     }
 
     internal fun clearMethods() {
@@ -199,6 +247,7 @@ object ValencedBridgeRegistry : ValencedBridge {
      */
     internal fun Any?.toNativeObject(): Any? {
         val value = if (this == Unit) null else this
+        if (phoenixLaunched == true) return value
         val makeNativeObject = argumentsMakeNativeObject ?: return value
         return makeNativeObject.invoke(argumentsInstance, value)
     }
