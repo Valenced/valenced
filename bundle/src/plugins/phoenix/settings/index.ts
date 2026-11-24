@@ -45,7 +45,11 @@ function template(list: number) {
             views.node(id),
         )
         const icon = parts.find(it => it?.type === 'image')
-        const label = parts.find(it => it?.type === 'text')
+        const label = views.find({ type: 'text' }, inner ?? -1)
+        const wrap =
+            label?.parent === inner
+                ? undefined
+                : views.node(label?.parent ?? -1)
         const chevron = parts.at(-1)
         const arrow = views.node(chevron?.children[0] ?? -1)
 
@@ -63,7 +67,7 @@ function template(list: number) {
             continue
 
         const [s, h, c, r, i] = nodes as ViewNode[]
-        return { s, h, c, r, i, icon, label, chevron, arrow }
+        return { s, h, c, r, i, icon, label, wrap, chevron, arrow }
     }
 }
 
@@ -106,7 +110,17 @@ function inject() {
                     from: t.i.id,
                     children: [
                         { from: t.icon.id, props: { uri } },
-                        { from: t.label.id, props: { text: name } },
+                        t.wrap
+                            ? {
+                                  from: t.wrap.id,
+                                  children: [
+                                      {
+                                          from: t.label.id,
+                                          props: { text: name },
+                                      },
+                                  ],
+                              }
+                            : { from: t.label.id, props: { text: name } },
                         ...(value === undefined
                             ? []
                             : [

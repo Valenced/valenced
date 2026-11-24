@@ -1,11 +1,9 @@
 package app.valenced.xposed.tweaks
 
-import android.content.ContextWrapper
 import app.valenced.xposed.Tweak
 import app.valenced.xposed.ensureFile
 import app.valenced.xposed.hook
 import app.valenced.xposed.loadClassOrNull
-import app.valenced.xposed.method
 import app.valenced.xposed.methodHook
 import app.valenced.xposed.api.registerNativeMethod
 import app.valenced.xposed.tweak
@@ -38,7 +36,7 @@ fun onLaunchDecision(block: (Boolean) -> Unit) {
     else decisionListeners += block
 }
 
-// PhoenixLaunch.i returns true to launch Phoenix, it holds the "Phoenix didn't stay up for 3 launches" string
+// PhoenixLaunch's decision method (R8 renames it per build) returns true to launch Phoenix
 val phoenixMode by tweak {
     registerNativeMethod("valenced.client.info") {
         mapOf(
@@ -64,10 +62,16 @@ val phoenixMode by tweak {
         return@tweak
     }
 
-    val decide = try {
-        cls.method("i", ContextWrapper::class.java)
-    } catch (e: NoSuchMethodException) {
-        log.e("PhoenixLaunch.i(ContextWrapper) not found, launch decision left to Discord", e)
+    val decide = dexFinder.findMethod {
+        matcher {
+            declaredClass(cls.name)
+            returnType("boolean")
+            paramTypes("android.content.ContextWrapper")
+            usingStrings("Phoenix didn't stay up for 3 launches")
+        }
+    }
+    if (decide == null) {
+        log.e("PhoenixLaunch decision method not found, launch decision left to Discord")
         publishLaunchDecision(false)
         return@tweak
     }
