@@ -18,6 +18,10 @@ import app.valenced.xposed.tweaks.plugins.pluginInstallMethods
 import app.valenced.xposed.tweaks.plugins.pluginLoader
 import app.valenced.xposed.tweaks.plugins.pluginMethods
 import app.valenced.xposed.tweaks.plugins.pluginStates
+import app.valenced.xposed.tweaks.phoenix.phoenixBundleLoader
+import app.valenced.xposed.tweaks.phoenix.phoenixFrames
+import app.valenced.xposed.tweaks.phoenix.phoenixNativeHooks
+import app.valenced.xposed.tweaks.phoenix.phoenixSettings
 import app.valenced.xposed.tweaks.plugins.repos.pluginRepos
 
 private lateinit var modulePath: String
@@ -33,6 +37,7 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         valencedBridgeSupport,
         scriptLoader,
         discordVersionRetriever,
+        phoenixMode,
 
         // Static patches
         fixResources,
@@ -54,6 +59,12 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         pluginMethods,
         pluginInstallMethods,
         valencedScriptLoader,
+
+        // Phoenix. Must follow the consumers, so bridge methods exist before the bundle runs.
+        phoenixFrames,
+        phoenixSettings,
+        phoenixBundleLoader,
+        phoenixNativeHooks,
     )
 
     override fun initZygote(startupParam: IXposedHookZygoteInit.StartupParam) {
