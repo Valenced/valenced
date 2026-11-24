@@ -218,6 +218,149 @@ export function encodeOps(ops: UiOp[]) {
 }
 
 /**
+ * Finds colors in props with a nonzero role, without decoding the batch: i32 and i64 values, and
+ * opaque colors in word lists. Values in arrays and objects take the role of the outer prop, or
+ * their own role when it has none.
+ *
+ * @returns Flat `[offset, role, color]` triples, with `offset` at the color's low 32 bits.
+ */
+export function findColors(bytes: Uint8Array, roles: ArrayLike<number>) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.length)
+    const found: number[] = []
+    let i = 0
+
+    const skipWords = () => {
+        i += 4 + 4 * view.getInt32(i, true)
+    }
+    const readWord = (role: number) => {
+        if (role && bytes[i + 3] === 0xff)
+            found.push(i, role, view.getUint32(i, true))
+        i += 4
+    }
+    const readProps = (count: number, outer: number) => {
+        for (; count > 0; count--) {
+            const key = view.getUint16(i, true)
+            i += 2
+            readValue(outer || roles[key] || 0)
+        }
+    }
+    const readValue = (role: number) => {
+        const tag = bytes[i++]!
+        switch (tag) {
+            case 3:
+                if (role) found.push(i, role, view.getUint32(i, true))
+                i += 4
+                break
+            case 4:
+                if (role && !view.getUint32(i + 4, true))
+                    found.push(i, role, view.getUint32(i, true))
+                i += 8
+                break
+            case 5:
+                i += 8
+                break
+            case 6:
+                i += 4 + view.getInt32(i, true)
+                break
+            case 7:
+            case 8:
+            case 10: {
+                let count = view.getInt32(i, true)
+                i += 4
+                if (tag === 8) readProps(count, role)
+                else
+                    for (; count > 0; count--) {
+                        if (tag === 10) i += 4 + view.getInt32(i, true)
+                        readValue(role)
+                    }
+                break
+            }
+            case 9:
+                i += 16
+                break
+            case 11:
+                for (
+                    let count = view.getInt32((i += 4) - 4, true);
+                    count > 0;
+                    count--
+                )
+                    readWord(role)
+                break
+            case 12:
+                i += 6
+                for (
+                    let count = view.getUint16(i - 2, true);
+                    count > 0;
+                    count--
+                ) {
+                    i += 2
+                    readWord(role)
+                }
+                break
+            default:
+                if (tag > 2)
+                    throw new Error(
+                        `Unknown UI value tag ${tag} at byte ${i - 1}`,
+                    )
+        }
+    }
+
+    if (bytes[i++] !== 1)
+        throw new Error(`Unsupported UI op version ${bytes[0]}`)
+
+    while (i < bytes.length) {
+        const code = bytes[i++]!
+        switch (OPS[code - 1]) {
+            case 'create':
+                i += 4
+                i += 2 + view.getUint16(i, true)
+                i += 2
+                readProps(view.getUint16(i - 2, true), 0)
+                break
+            case 'update':
+                i += 6
+                readProps(view.getUint16(i - 2, true), 0)
+                break
+            case 'children':
+                i += 4
+                skipWords()
+                break
+            case 'delete':
+            case 'motion':
+                skipWords()
+                break
+            case 'root':
+                i += 4
+                break
+            case 'focus':
+                i += bytes[i] ? 5 : 1
+                break
+            case 'scrollTo':
+                i += 4
+                readValue(0)
+                break
+            case 'requestFrame':
+                break
+            case 'childEdits':
+                i += 8
+                for (
+                    let count = view.getInt32(i - 4, true);
+                    count > 0;
+                    count--
+                ) {
+                    i += 8
+                    skipWords()
+                }
+                break
+            default:
+                throw new Error(`Unknown UI op ${code} at byte ${i - 1}`)
+        }
+    }
+
+    return found
+}
+
+/**
  * Splits a `nativeDispatch` frame into its events. A batch (kind 4) holds several, anything else
  * is one event.
  */

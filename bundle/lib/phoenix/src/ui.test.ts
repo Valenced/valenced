@@ -4,12 +4,13 @@ import {
     decodeViewEvent,
     encodeOps,
     encodeViewEvent,
+    findColors,
     joinDispatch,
     propKey,
     propName,
     splitDispatch,
 } from './ui'
-import type { UiOp } from './ui'
+import type { UiOp, UiValue } from './ui'
 
 const hex = (value: string) =>
     Uint8Array.from(value.match(/../g) ?? [], byte => Number.parseInt(byte, 16))
@@ -272,5 +273,136 @@ describe('prop names', () => {
 
         // @ts-expect-error
         delete globalThis[seam]
+    })
+})
+
+describe('findColors', () => {
+    test('finds colors by role and rewrites them in place', () => {
+        const bytes = encodeOps([
+            {
+                op: 'create',
+                id: 1,
+                type: 'view',
+                props: [
+                    { key: 0, value: { type: 'i64', value: 0xff112233n } },
+                    { key: 1, value: { type: 'i32', value: 0x20ffffff } },
+                    {
+                        key: 2,
+                        value: {
+                            type: 'obj',
+                            value: [
+                                {
+                                    key: 0,
+                                    value: { type: 'i64', value: 0xff445566n },
+                                },
+                            ],
+                        },
+                    },
+                    {
+                        key: 3,
+                        value: {
+                            type: 'arr',
+                            value: [{ type: 'i64', value: 0xff778899n }],
+                        },
+                    },
+                    {
+                        key: 4,
+                        value: {
+                            type: 'words',
+                            value: [0x3f800000, 0xffaabbcc | 0],
+                        },
+                    },
+                    { key: 5, value: { type: 'str', value: 'text' } },
+                    { key: 6, value: { type: 'i64', value: 0xff000001n } },
+                ],
+            },
+            { op: 'children', parent: 0, ids: [1] },
+            {
+                op: 'update',
+                id: 1,
+                props: [
+                    {
+                        key: 4,
+                        value: {
+                            type: 'wpatch',
+                            list: 0,
+                            patches: [
+                                [1, 0xffddeeff | 0],
+                                [2, 7],
+                            ],
+                        },
+                    },
+                ],
+            },
+        ])
+
+        const found = findColors(bytes, [1, 2, 0, 4, 5])
+        const colors = found.filter((_, i) => i % 3 === 2)
+        expect(colors).toEqual([
+            0xff112233, 0x20ffffff, 0xff445566, 0xff778899, 0xffaabbcc,
+            0xffddeeff,
+        ])
+        expect(found.filter((_, i) => i % 3 === 1)).toEqual([1, 2, 1, 4, 5, 5])
+
+        const view = new DataView(bytes.buffer)
+        for (let i = 0; i < found.length; i += 3)
+            view.setUint32(found[i]!, 0xff000000 + i, true)
+
+        const [create, , update] = decodeOps(bytes) as [
+            Extract<UiOp, { op: 'create' }>,
+            UiOp,
+            Extract<UiOp, { op: 'update' }>,
+        ]
+        const value = (key: number) =>
+            create.props.find(it => it.key === key)?.value
+        expect(value(0)).toEqual({ type: 'i64', value: 0xff000000n })
+        expect(value(1)).toEqual({ type: 'i32', value: 0xff000003 | 0 })
+        expect(value(4)).toEqual({
+            type: 'words',
+            value: [0x3f800000, 0xff00000c | 0],
+        })
+        expect(value(6)).toEqual({ type: 'i64', value: 0xff000001n })
+        expect(update.props[0]?.value).toMatchObject({
+            patches: [
+                [1, 0xff00000f | 0],
+                [2, 7],
+            ],
+        })
+    })
+
+    test('walks captured frames', () => {
+        const ints = (value: UiValue): number =>
+            value.type === 'i32' || value.type === 'i64'
+                ? 1
+                : value.type === 'arr'
+                  ? value.value.reduce((sum, it) => sum + ints(it), 0)
+                  : value.type === 'obj'
+                    ? value.value.reduce((sum, it) => sum + ints(it.value), 0)
+                    : 0
+
+        for (const frame of [POPOVER, CHILD_EDITS, UPDATES]) {
+            const bytes = hex(frame)
+            const expected = decodeOps(bytes).reduce(
+                (sum, op) =>
+                    sum +
+                    ('props' in op
+                        ? op.props.reduce(
+                              (total, it) => total + ints(it.value),
+                              0,
+                          )
+                        : 0),
+                0,
+            )
+            const words = decodeOps(bytes)
+                .flatMap(op => ('props' in op ? op.props : []))
+                .flatMap(it =>
+                    it.value.type === 'words' ? it.value.value : [],
+                )
+                .filter(word => word >>> 24 === 0xff).length
+
+            expect(findColors(bytes, new Array(1024).fill(1)).length / 3).toBe(
+                expected + words,
+            )
+        }
     })
 })

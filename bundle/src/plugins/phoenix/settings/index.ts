@@ -3,6 +3,7 @@ import { createViews } from '@valenced/phoenix/views'
 import { BuildEnvironment, FullVersion } from '~constants'
 import ValencedDonate from '../../../assets/ValencedDonate.webp'
 import ValencedIcon from '../../../assets/ValencedIcon.webp'
+import { themed } from '../themes'
 import type { ViewNode, ViewPatch, ViewSpec } from '@valenced/phoenix/views'
 
 const views = createViews()
@@ -32,8 +33,8 @@ let enabled: number | undefined
 
 function color(node: number | ViewNode | undefined, name: string) {
     const value = node === undefined ? undefined : views.prop(node, name)
-    if (value?.type === 'i64') return Number(value.value)
-    if (value?.type === 'i32') return value.value >>> 0
+    if (value?.type === 'i64') return themed(Number(value.value), name)
+    if (value?.type === 'i32') return themed(value.value >>> 0, name)
 }
 
 function template(list: number) {
