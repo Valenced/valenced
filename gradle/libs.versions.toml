@@ -13,6 +13,14 @@ okio = "3.18.2"
 serialization = "1.11.0"
 xposed = "82"
 
+# QuickJS-ng, the JS engine Valenced ships for Discord's Phoenix client.
+# The hash is of the GitHub source tarball for the tag.
+quickjsNg = "0.18.0"
+quickjsNgSha256 = "28bcd89aa3683fd2a946537e5ce3f11cc46b5cbf3383c7561aaef3df5ff9f1dd"
+
+ndk = "28.1.13356709"
+cmake = "3.22.1"
+
 compileSdk = "37"
 minSdk = "24"
 minSdkLibrary = "21"
