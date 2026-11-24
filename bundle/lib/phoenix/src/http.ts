@@ -57,6 +57,8 @@ let nextId = 0x60000000
 let lastSeq = 0
 // Raw header items from Phoenix's last authorized request. Copied into plugin requests, never decoded.
 let headerItems: Uint8Array[] | undefined
+// Raw authorization value, only compared against frames so plugins never get one carrying it
+let token: Uint8Array | undefined
 
 /**
  * Listens to Discord API requests Phoenix sends.
@@ -221,23 +223,33 @@ function attach() {
         lastSeq = frame.seq
 
         if (DISCORD_API.test(frame.url)) {
-            const items = authorizedHeaders(frame)
-            if (items) {
-                headerItems = items
+            const authorized = authorizedHeaders(frame)
+            if (authorized) {
+                ;[headerItems, token] = authorized
                 for (const resolve of waiting.splice(0)) resolve()
             }
         }
 
-        let request: HttpRequest = frame
+        if (contains(frame.body)) return
+        let request: HttpRequest = {
+            id: frame.id,
+            method: frame.method,
+            url: frame.url,
+            body: frame.body,
+        }
+        let replaced = false
         for (const listener of listeners) {
             const result = listener(request)
             if (result === false) {
                 frames.set(frame.id, frame)
                 return false
             }
-            if (result) request = result
+            if (result) {
+                request = result
+                replaced = true
+            }
         }
-        if (request !== frame) return encodeFrame({ ...frame, ...request })
+        if (replaced) return encodeFrame({ ...frame, ...request })
     })
 
     onDispatch((_, bytes) => {
@@ -263,7 +275,7 @@ function attach() {
                 continue
             }
             if (response && watchers.has(response[0])) {
-                watchers.get(response[0])!(response[1])
+                if (!contains(event)) watchers.get(response[0])!(response[1])
                 watchers.delete(response[0])
             }
             events.push(event)
@@ -368,26 +380,55 @@ function decodeResponse(event: Uint8Array): [number, HttpResponse] | undefined {
     return id === undefined ? undefined : [id, response]
 }
 
-/** Header items of a request carrying `authorization`, minus per-request ones. Reads names only. */
-function authorizedHeaders(frame: Frame) {
+/** Header items of a request carrying `authorization`, minus per-request ones, and the raw authorization value. Reads names only. */
+function authorizedHeaders(
+    frame: Frame,
+): [Uint8Array[], Uint8Array] | undefined {
     for (const field of frame.rest) {
         const reader = new ByteReader(field)
         if (reader.varint() !== HEADERS || reader.u8() !== 7) continue
 
         const items: Uint8Array[] = []
-        let authorized = false
+        let value: Uint8Array | undefined
         for (let count = reader.i32(); count > 0; count--) {
             const start = reader.offset
             if (reader.u8() !== 7 || reader.i32() !== 2 || reader.u8() !== 6)
                 return
             const name = decodeUtf8(reader.raw(reader.i32())).toLowerCase()
-            skipValue(reader, reader.u8())
-            if (name === 'authorization') authorized = true
+            const tag = reader.u8()
+            if (name === 'authorization' && tag === 6)
+                value = reader.raw(reader.i32())
+            else skipValue(reader, tag)
             if (!REQUEST_HEADERS.has(name))
                 items.push(field.subarray(start, reader.offset))
         }
-        return authorized ? items : undefined
+        return value?.length ? [items, value] : undefined
     }
+}
+
+/**
+ * Whether a raw frame may carry Phoenix's token. Until Phoenix has sent an authorized request
+ * the token is unknown, so every frame may.
+ */
+export function mayCarryToken(bytes: Uint8Array) {
+    attach()
+    return !token || contains(bytes)
+}
+
+function contains(bytes: Uint8Array) {
+    if (!token) return false
+    const first = token[0]
+    const last = bytes.length - token.length
+    search: for (
+        let i = bytes.indexOf(first);
+        i !== -1 && i <= last;
+        i = bytes.indexOf(first, i + 1)
+    ) {
+        for (let j = 1; j < token.length; j++)
+            if (bytes[i + j] !== token[j]) continue search
+        return true
+    }
+    return false
 }
 
 function field(key: number, value: Uint8Array) {

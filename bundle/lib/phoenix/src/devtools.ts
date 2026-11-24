@@ -7,9 +7,8 @@ import { reloadApp } from '@valenced/modules/native/app'
 import { getErrorStack } from '@valenced/utils/error'
 import { FullVersion } from '~constants'
 import * as bytes from './bytes'
-import * as gateway from './gateway'
-import * as http from './http'
 import * as phoenix from './index'
+import { phoenixApi } from './plugins'
 import * as ui from './ui'
 import { createViews, find, findAll, node } from './views'
 import type { ViewQuery, Views } from './views'
@@ -49,7 +48,7 @@ registerJSMethod('valenced.devtools.open', () => {
     views = createViews()
     scope = {
         vars: { mcp: {} },
-        phoenix: { ...phoenix, ...gateway, ui, bytes, http, views },
+        phoenix: { ...phoenixApi, views },
         views,
         tree,
         events: recentEvents,

@@ -9,7 +9,12 @@ import * as http from './http'
 import * as phoenix from './index'
 import * as ui from './ui'
 import { createViews } from './views'
-import type { PhoenixPluginOptions, PhoenixPluginScope } from './types'
+import type {
+    DispatchListener,
+    InvokeListener,
+    PhoenixPluginOptions,
+    PhoenixPluginScope,
+} from './types'
 
 interface NativePlugin {
     manifest: { id: string }
@@ -37,7 +42,21 @@ const settingListeners = new Map<string, Set<(value: unknown) => void>>()
 const settingValues = new Map<string, Record<string, unknown>>()
 let runtimeSlotId: string | undefined
 
-const phoenixApi = { ...phoenix, ...gateway, ui, bytes, http }
+export const phoenixApi = {
+    ...phoenix,
+    ...gateway,
+    ui,
+    bytes,
+    http,
+    onInvoke: (listener: InvokeListener) =>
+        phoenix.onInvoke(frame =>
+            http.mayCarryToken(frame) ? undefined : listener(frame),
+        ),
+    onDispatch: (listener: DispatchListener) =>
+        phoenix.onDispatch((handle, frame) =>
+            http.mayCarryToken(frame) ? undefined : listener(handle, frame),
+        ),
+}
 
 export function registerInternalPhoenixPlugin(
     id: string,

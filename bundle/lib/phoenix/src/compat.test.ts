@@ -96,7 +96,7 @@ vi.mock('@valenced/modules/native', async importOriginal => ({
 
 import { ByteReader, ByteWriter, decodeUtf8, encodeUtf8 } from './bytes'
 import { AbortController, FormData, fetch, URLSearchParams } from './fetch'
-import { request } from './http'
+import { mayCarryToken, onRequest, request, watch } from './http'
 import { startExternalPhoenixPlugins } from './plugins'
 
 const gateway = (event: string, data: object) =>
@@ -489,6 +489,26 @@ describe('Discord HTTP', () => {
         expect(replies).toContain('["cat dog"]')
         expect(read(passed).struct).toContain('/users/@me?x=1')
         expect(failures('test.http')).toEqual([])
+    })
+
+    test('keeps the token from plugins', () => {
+        const seen: object[] = []
+        const off = onRequest(request => {
+            seen.push(request)
+        })
+        frames.onInvoke!(
+            guest(5, 'GET', 'https://discord.com/api/v9/users/@me'),
+        )
+        off()
+        expect(Object.keys(seen[0]!)).toEqual(['id', 'method', 'url', 'body'])
+
+        expect(mayCarryToken(encodeUtf8('{"token":"secret"}'))).toBe(true)
+        expect(mayCarryToken(encodeUtf8('{"token":"other"}'))).toBe(false)
+
+        const watched: unknown[] = []
+        watch(6, response => watched.push(response))
+        frames.onDispatch!(0, reply(6, 200, '{"token":"secret"}'))
+        expect(watched).toEqual([])
     })
 
     test('URLSearchParams encodes and parses forms', () => {
