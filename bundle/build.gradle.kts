@@ -54,7 +54,8 @@ abstract class DenoTask @Inject constructor(private val exec: ExecOperations) : 
 
     companion object {
         /** What Deno needs to find itself, its cache and a temp directory. */
-        private val PASSTHROUGH_ENV = setOf(
+        private val PASSTHROUGH_ENV = sortedSetOf(
+            String.CASE_INSENSITIVE_ORDER,
             "PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SystemRoot",
             "XDG_CACHE_HOME", "DENO_DIR", "TMPDIR", "TEMP", "TMP",
         )
