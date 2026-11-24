@@ -25,6 +25,8 @@ export default function ValencedSettingScreen() {
                                     settings: [
                                         Setting.ValencedVersion,
                                         Setting.LoaderVersion,
+                                        Setting.ValencedClient,
+                                        Setting.ValencedFramework,
                                         Setting.ValencedDiscord,
                                         Setting.ValencedSourceRepository,
                                         Setting.ValencedLicense,
@@ -42,6 +44,7 @@ export default function ValencedSettingScreen() {
                                     label: 'Actions',
                                     settings: [
                                         Setting.Reload,
+                                        Setting.ValencedSwitchClient,
                                         Setting.ValencedEnterRecoveryMode,
                                     ],
                                 },

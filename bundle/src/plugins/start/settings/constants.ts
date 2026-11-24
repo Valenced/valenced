@@ -17,8 +17,12 @@ export const Setting = {
     ReactNativeVersion: 'ReactNativeVersion',
     HermesVersion: 'HermesVersion',
     LoaderVersion: 'LoaderVersion',
+    ValencedClient: 'ValencedClient',
+    ValencedFramework: 'ValencedFramework',
+    ValencedSwitchClient: 'ValencedSwitchClient',
 } as const
 
 export const RouteNames = {
     [Setting.Valenced]: 'Valenced',
+    [Setting.ValencedSwitchClient]: 'ValencedSwitchClient',
 } as const
