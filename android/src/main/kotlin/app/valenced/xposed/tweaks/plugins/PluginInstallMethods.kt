@@ -326,7 +326,7 @@ val pluginInstallMethods by tweak {
 }
 
 /** Rejects replacing an internal plugin without provenance. Stubs have one, so they can update. */
-private fun requireReplaceable(id: String) {
+internal fun requireReplaceable(id: String) {
     val factory = pluginRegistry.factories[id] ?: return
     if (InternalPluginFlags.INTERNAL in factory.internalFlags && SourcesStore[id] == null)
         throw PluginSystemError(

@@ -21,6 +21,7 @@ import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -46,8 +47,12 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import app.valenced.plugins.external.validatedPluginIcon
+import app.valenced.xposed.BuildConfig
 import app.valenced.xposed.api.HostScope
+import app.valenced.xposed.tweaks.plugins.external.promptInstallPlugin
 import app.valenced.xposed.tweaks.plugins.pluginRegistry
+import app.valenced.xposed.tweaks.plugins.requireReplaceable
 import app.valenced.xposed.tweaks.plugins.restartPlugin
 import app.valenced.xposed.tweaks.plugins.stopPlugin
 import kotlinx.coroutines.Dispatchers
@@ -68,11 +73,16 @@ import app.valenced.xposed.ValencedConstants
 import app.valenced.xposed.api.registerNativeMethod
 import app.valenced.xposed.tweak
 import app.valenced.xposed.tweaks.bridge.ValencedBridgeRegistry
+import app.valenced.xposed.tweaks.onLaunchDecision
 import app.valenced.xposed.tweaks.phoenixLaunched
 import app.valenced.xposed.tweaks.readForce
 import app.valenced.xposed.tweaks.xposedFramework
+import app.valenced.xposed.versionCode
+import app.valenced.xposed.versionName
 import java.io.File
 import java.lang.ref.WeakReference
+import java.text.DateFormat
+import java.util.Date
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -84,11 +94,17 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 
 val phoenixSettings by tweak {
     var foreground = WeakReference<Activity>(null)
+    var theme: Map<*, *>? = null
+    val errors = mutableListOf<List<Any?>>()
     withAppContext { ctx ->
         (ctx as? Application ?: ctx.applicationContext as Application).registerActivityLifecycleCallbacks(
             object : Application.ActivityLifecycleCallbacks {
                 override fun onActivityResumed(activity: Activity) {
                     foreground = WeakReference(activity)
+                    if (activity.isFinishing) return
+                    for (args in errors) PhoenixSettingsScreen(this@tweak, activity, theme, null)
+                        .alertError("${args.getOrNull(0)}", "${args.getOrNull(1)}")
+                    errors.clear()
                 }
 
                 override fun onActivityDestroyed(activity: Activity) {
@@ -105,13 +121,26 @@ val phoenixSettings by tweak {
     }
 
     registerNativeMethod("valenced.phoenix.openSettings") { args ->
+        theme = args.getOrNull(0) as? Map<*, *>
         Handler(Looper.getMainLooper()).post {
             val activity = foreground.get()
             if (activity == null || activity.isFinishing) log.w("No foreground activity to open settings on")
-            else PhoenixSettingsScreen(this, activity, args.getOrNull(0) as? Map<*, *>, args.getOrNull(1) as? Map<*, *>)
+            else PhoenixSettingsScreen(this, activity, theme, args.getOrNull(1) as? Map<*, *>)
                 .show()
         }
         null
+    }
+
+    // Recovery registers its handler late and on the launcher activity, which Phoenix finishes
+    onLaunchDecision { phoenix ->
+        if (phoenix) registerNativeMethod("valenced.alertError") { args ->
+            Handler(Looper.getMainLooper()).post {
+                val activity = foreground.get()
+                if (activity == null || activity.isFinishing) errors += args
+                else PhoenixSettingsScreen(this, activity, theme, null).alertError("${args.getOrNull(0)}", "${args.getOrNull(1)}")
+            }
+            null
+        }
     }
 }
 
@@ -163,6 +192,11 @@ private class PhoenixSettingsScreen(
     private var matchAll = true
     private var sortBy = "Name"
     private var reverse = false
+    private var updates: List<Map<*, *>>? = null
+    private var selected = setOf<String>()
+    private var checking = false
+    private var installing = false
+    private var checkError: String? = null
 
     private val title = text("", primary, 18f, semibold).apply {
         maxLines = 1
@@ -189,7 +223,6 @@ private class PhoenixSettingsScreen(
     }
     private val fab = ImageView(ctx).apply {
         scaleType = ImageView.ScaleType.CENTER
-        setImageDrawable(icon("PlusLargeIcon", white))
         background = RippleDrawable(ColorStateList.valueOf(pressed), shape(brand, 16), null)
         elevation = dp(4).toFloat()
     }
@@ -277,6 +310,7 @@ private class PhoenixSettingsScreen(
         filterButton.setImageDrawable(icon("FiltersHorizontalIcon", if (custom) white else primary))
         filterButton.background = RippleDrawable(ColorStateList.valueOf(pressed), if (custom) shape(brand, 8) else null, null)
         fab.visibility = View.VISIBLE
+        fab.setImageDrawable(icon("PlusLargeIcon", white))
         fab.contentDescription = "Browse plugins"
         fab.setOnClickListener { open { showBrowse(null) } }
 
@@ -367,16 +401,9 @@ private class PhoenixSettingsScreen(
                 "Internal" to info?.get("icon") as? String,
             )) {
                 val checked = label in filters
-                row(label, emptyList(), ImageView(ctx).apply {
-                    scaleType = ImageView.ScaleType.CENTER
-                    if (checked) setImageDrawable(icon("CheckmarkLargeIcon", white))
-                    background = GradientDrawable().apply {
-                        cornerRadius = dp(6).toFloat()
-                        if (checked) setColor(brand)
-                        else setStroke(dp(2), ColorUtils.setAlphaComponent(secondary, 0x8C))
-                    }
-                    layoutParams = ViewGroup.LayoutParams(dp(24), dp(24))
-                }, icon = icon) { update { if (checked) filters -= label else filters += label } }
+                row(label, emptyList(), checkbox(checked), icon = icon) {
+                    update { if (checked) filters -= label else filters += label }
+                }
             }
         }
         section(null, into = content) {
@@ -1037,7 +1064,49 @@ private class PhoenixSettingsScreen(
     }
 
     private fun showValenced() = page("Valenced") {
+        val recoverySlot = (call("valenced.plugins.getConstants") as Map<*, *>)["defaultsOnlySlot"]
+        val slots = call("valenced.plugins.states.getSlots") as Map<*, *>
+        val recovery = (slots["oneShot"] ?: slots["active"]) == recoverySlot
+        val developer = (call("valenced.plugins.list") as List<*>).map { it as Map<*, *> }
+            .firstOrNull { (it["manifest"] as Map<*, *>)["id"] == "valenced.api.hidden" }
+        val entry = ((call("valenced.plugins.states.read") as Map<*, *>)[slots["active"]] as? Map<*, *>)
+            ?.get("valenced.api.hidden") as? Map<*, *>
+
         render {
+            body.addView(LinearLayout(ctx).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(16), dp(16), dp(16))
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(ColorUtils.setAlphaComponent(brand, 0x33), surface),
+                ).apply { cornerRadius = dp(16).toFloat() }
+                addView(LinearLayout(ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(text("Support Valenced", primary, 20f, semibold))
+                    addView(
+                        text("You can support the development of Valenced by donating or contributing!", primary, 16f),
+                        LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(6) },
+                    )
+                    addView(LinearLayout(ctx).apply {
+                        for ((label, icon, url) in listOf(
+                            Triple("Donate", "HeartIcon", info?.get("donate") as? String),
+                            Triple("Contribute", "HandRequestSpeakIcon", info?.get("source") as? String),
+                        )) if (!url.isNullOrEmpty()) addView(
+                            button(
+                                label,
+                                icon,
+                                if (label == "Donate") brand else surface,
+                                if (label == "Donate") white else primary,
+                            ) { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
+                            LinearLayout.LayoutParams(WRAP_CONTENT, dp(32)).apply { marginEnd = dp(12) },
+                        )
+                    }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) })
+                }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                addView(
+                    ImageView(ctx).apply { setImageDrawable(icon(info?.get("donateImage") as? String, primary)) },
+                    LinearLayout.LayoutParams(dp(96), dp(96)).apply { marginStart = dp(16) },
+                )
+            })
             section("Valenced", icons = true) {
                 for ((name, value, icon) in listOf(
                     Triple("Valenced", info?.get("version") as? String, info?.get("icon") as? String),
@@ -1057,14 +1126,94 @@ private class PhoenixSettingsScreen(
                     activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                 }
             }
+            section("Versions", icons = true) {
+                for ((name, value) in listOf(
+                    "QuickJS" to BuildConfig.QUICKJS_VERSION,
+                    "Phoenix" to "${activity.versionName()} (${activity.versionCode()})",
+                )) row(name, listOf(value), icon = "ScienceIcon") { copy(name, value) }
+            }
             section("Actions", icons = true) {
                 row("Reload App", icon = "RetryIcon") { reloadApp() }
 
                 row("Switch Client", listOf(modes[currentMode()].second), icon = "MobilePhoneIcon") {
                     open(::showClient)
                 }
+                row(
+                    "Enter Recovery Mode",
+                    listOf(
+                        if (recovery) "Currently in Recovery Mode. Reload to exit."
+                        else "Run Valenced with default plugins only for one boot. Use if plugins are causing issues.",
+                    ),
+                    icon = "ShieldIcon",
+                    onClick = if (recovery) null else {
+                        {
+                            action {
+                                call("valenced.plugins.states.setActiveSlot", recoverySlot, true)
+                                reloadApp()
+                            }
+                        }
+                    },
+                ).apply { if (recovery) alpha = 0.5f }
+            }
+            if (developer != null) section("Developer", icons = true) {
+                row(
+                    "Developer Mode",
+                    listOf(
+                        if (recovery) "Unavailable in Recovery Mode. Reload to exit."
+                        else "Exposes internal Valenced APIs for development purposes. Makes client mod detection easier. Use with caution.",
+                    ),
+                    toggle(entry?.get("enabled") == true || (developer["enabledByDefault"] == true && entry == null)) { on ->
+                        action {
+                            try {
+                                call("valenced.plugins.setEnabled", "valenced.api.hidden", on, on)
+                            } finally {
+                                refresh()
+                            }
+                        }
+                    }.apply {
+                        if (recovery) {
+                            isEnabled = false
+                            alpha = 0.5f
+                        }
+                    },
+                    icon = "WrenchIcon",
+                )
             }
         }
+    }
+
+    fun alertError(error: String, version: String) {
+        val (modal, content) = overlay(false)
+        content.addView(text("Valenced Error", primary, 20f, semibold).apply { gravity = Gravity.CENTER })
+        content.addView(
+            text(
+                "Valenced: $version\nDiscord: ${activity.versionName()} (${activity.versionCode()})\n" +
+                        "Device: ${Build.MANUFACTURER} ${Build.MODEL}",
+                secondary,
+            ),
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) },
+        )
+        content.addView(
+            text(error.trim(), primary, 12f, Typeface.MONOSPACE).apply {
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = shape(field, 8)
+                setTextIsSelectable(true)
+            },
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(12) },
+        )
+        for ((index, name) in listOf("Reload", "Copy", "Close").withIndex()) content.addView(LinearLayout(ctx).apply {
+            gravity = Gravity.CENTER
+            background = RippleDrawable(ColorStateList.valueOf(pressed), shape(if (index == 0) brand else surface, 8), null)
+            addView(text(name, if (index == 0) white else primary, 16f, semibold))
+            setOnClickListener {
+                when (index) {
+                    0 -> reloadApp()
+                    1 -> copy("Stack Trace", error)
+                    else -> modal.dismiss()
+                }
+            }
+        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(40)).apply { topMargin = dp(if (index == 0) 24 else 12) })
+        modal.show()
     }
 
     private fun showClient() = page("Switch Client") {
@@ -1104,6 +1253,10 @@ private class PhoenixSettingsScreen(
         },
     ) {
         val repos = (call("valenced.plugins.repos.list") as List<*>).map { it as Map<*, *> }
+        val storage = pluginStorageFile("valenced.settings.plugins").let { if (it.isFile) JSONObject(it.readText()) else JSONObject() }
+        val autoUpdate = storage.optBoolean("autoUpdate", true)
+        val held = (call("valenced.plugins.list") as List<*>)
+            .count { ((it as Map<*, *>)["source"] as? Map<*, *>)?.get("held") == true }
 
         render {
             val url = input("").apply {
@@ -1163,8 +1316,334 @@ private class PhoenixSettingsScreen(
                     ) { open { showBrowse(repoUrl) } }
                 }
             }
+            section("Updates") {
+                row(
+                    "Update plugins automatically",
+                    listOf("Check repositories and apply plugin updates after startup."),
+                    toggle(autoUpdate) { on ->
+                        action {
+                            writeSetting("valenced.settings.plugins", "autoUpdate", on, false)
+                            refresh()
+                        }
+                    },
+                )
+                row(
+                    "Skip on metered networks",
+                    listOf("Skip automatic updates on metered connections."),
+                    toggle(storage.optBoolean("skipUpdatesOnExpensiveNetwork")) { on ->
+                        action {
+                            writeSetting("valenced.settings.plugins", "skipUpdatesOnExpensiveNetwork", on, false)
+                            refresh()
+                        }
+                    }.apply {
+                        if (!autoUpdate) {
+                            isEnabled = false
+                            alpha = 0.5f
+                        }
+                    },
+                )
+                val busy = checking || installing
+                val idle = !busy && repos.any { it["internal"] != true }
+                row(
+                    "Check for updates",
+                    listOfNotNull(
+                        checkError ?: when {
+                            busy -> "Checking for updates..."
+                            updates?.isEmpty() == true -> "All plugins up to date!"
+                            storage.has("lastUpdateCheck") -> "Last checked: " +
+                                    DateFormat.getDateTimeInstance().format(Date(storage.getLong("lastUpdateCheck")))
+                            else -> null
+                        },
+                    ),
+                    icon = "RefreshIcon",
+                    onClick = if (idle) ::checkForUpdates else null,
+                ).apply { if (!idle) alpha = 0.5f }
+                updates?.takeIf { it.isNotEmpty() }?.let {
+                    row(
+                        "View updates",
+                        listOf("${plural(it.size, "update")} available"),
+                        chevron(),
+                        icon = "DownloadIcon",
+                        onClick = if (busy) null else { { open(::showUpdates) } },
+                    )
+                }
+            }
+            if (held > 0) body.addView(
+                text("Updates are paused for ${plural(held, "plugin")}.", secondary, 12f),
+                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(8) },
+            )
+            section("Advanced", icons = true) {
+                row("Install from file", icon = "DownloadIcon") {
+                    with(host) {
+                        promptInstallPlugin({ id -> pluginRegistry.factories[id]?.manifest?.version }, ::requireReplaceable) { result ->
+                            Handler(Looper.getMainLooper()).post {
+                                action {
+                                    val prompt = result.getOrThrow()
+                                    val manifest = prompt.manifest
+                                    val accepted = confirm(
+                                        "Install ${manifest.name}?",
+                                        prompt.replaces?.let { "This replaces the installed version $it. The update applies after a reload." },
+                                        "Install",
+                                    ) { modal ->
+                                        modal.addView(View(ctx), LinearLayout.LayoutParams(0, dp(12)))
+                                        card(
+                                            manifest.name,
+                                            manifest.icon?.let(::validatedPluginIcon),
+                                            manifest.description,
+                                            text(
+                                                prompt.replaces?.let { "v$it to v${manifest.version}" } ?: "v${manifest.version}",
+                                                secondary,
+                                                13f,
+                                            ),
+                                            modal,
+                                        )
+                                    }
+                                    val outcome = call("valenced.plugins.confirmInstallFile", prompt.token, accepted)
+                                    if (outcome == "cancelled") return@action
+                                    dirty = true
+                                    Toast.makeText(
+                                        ctx,
+                                        if (outcome == "pending") "Updated ${manifest.name} ${manifest.version}, reload to apply"
+                                        else "Installed ${manifest.name}",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                    refresh()
+                                }
+                            }
+                        }
+                    }
+                }
+                row("Restore default repository", icon = "GlobeEarthIcon") {
+                    action {
+                        val default = info?.get("defaultRepo") as? String
+                        if (default.isNullOrEmpty() ||
+                            (call("valenced.plugins.repos.list") as List<*>).any { (it as Map<*, *>)["url"] == default }
+                        ) {
+                            Toast.makeText(ctx, "Nothing to restore", Toast.LENGTH_SHORT).show()
+                            return@action
+                        }
+                        call("valenced.plugins.repos.set", listOf(mapOf("url" to default, "enabled" to true)) + userRepos())
+                        writeSetting("valenced.settings.plugins", "defaultRepoRestored", true, false)
+                        try {
+                            call("valenced.plugins.repos.refresh", default)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Throwable) {
+                        }
+                        refresh()
+                    }
+                }
+            }
         }
     }
+
+    private fun showUpdates() = page(
+        "Plugin Updates",
+        iconButton("RefreshIcon", "Refresh", primary) { if (!checking && !installing) checkForUpdates() },
+    ) {
+        if (updates == null) loadUpdates(false)
+        val listed = updates.orEmpty()
+        val manifests = (call("valenced.plugins.list") as List<*>)
+            .associate { ((it as Map<*, *>)["manifest"] as Map<*, *>).let { manifest -> manifest["id"] to manifest } }
+        val repoNames = (call("valenced.plugins.repos.list") as List<*>)
+            .associate { (it as Map<*, *>)["url"] to (it["name"] as? String ?: it["url"]) }
+        val pending = pluginRegistry.pendingUpdates.size
+        val busy = checking || installing
+        val nameOf = { id: Any? -> manifests[id]?.get("name") as? String ?: "$id" }
+        val describe = { issue: Map<*, *> ->
+            when (issue["type"]) {
+                "breaks" -> "Breaks ${nameOf(issue["dependent"])}, which needs ${nameOf(issue["id"])} ${issue["range"]}." +
+                        if (issue["fixedBy"] != null) " Select its update to fix this." else ""
+                "conflict" -> "${nameOf(issue["dependent"])} v${issue["dependentVersion"]} needs ${nameOf(issue["id"])} " +
+                        "${issue["range"]}, but gets v${issue["version"]}."
+                "unresolved" -> {
+                    val name = nameOf(issue["id"])
+                    val problem = when (issue["reason"]) {
+                        "held" -> "$name is paused at v${issue["installed"]}, but ${issue["range"]} is needed. Resume its updates first."
+                        "target" -> "${issue["detail"]}"
+                        else -> "No version of $name matching ${issue["range"]} is available"
+                    }
+                    if (issue["optional"] == true) "Skips optional $name. $problem" else problem
+                }
+                "unavailable" -> issue["version"]?.let { "Version $it is not available" } ?: "Not available from its repository"
+                "held" -> "Updates are paused at v${issue["version"]}. Turn on \"Allow updates\" to update."
+                "downgrade" -> "Downgrades from v${issue["from"]} to v${issue["to"]}"
+                "upToDate" -> "Already up to date"
+                else -> "${issue["message"]}"
+            }
+        }
+
+        fab.visibility = if (listed.isEmpty()) View.GONE else View.VISIBLE
+        fab.setImageDrawable(icon("DownloadIcon", white))
+        fab.contentDescription = "Update ${plural(selected.size, "plugin")}"
+        fab.isEnabled = !busy && selected.isNotEmpty()
+        fab.alpha = if (fab.isEnabled) 1f else 0.5f
+        fab.setOnClickListener {
+            installing = true
+            refresh()
+            action {
+                val errors = mutableListOf<String>()
+                var updated = 0
+                try {
+                    for (id in selected) try {
+                        val plan = call("valenced.plugins.planInstall", id, mapOf("skipMissingOptionals" to true))
+                        updated += ((call("valenced.plugins.install", plan) as Map<*, *>)["pending"] as List<*>).size
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        errors += "$id: ${e.message}"
+                    }
+                    dirty = true
+                    loadUpdates(false)
+                } finally {
+                    installing = false
+                    refresh()
+                }
+                if (errors.isNotEmpty()) alert(errors.joinToString("\n"))
+                else Toast.makeText(ctx, "Updated ${plural(updated, "plugin")}. Reload to apply.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        render {
+            if (listed.isEmpty()) {
+                body.addView(LinearLayout(ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(16), dp(96), dp(16), 0)
+                    addView(
+                        text(if (pending > 0) "Reload to update" else "No updates", primary, 24f, semibold)
+                            .apply { gravity = Gravity.CENTER },
+                    )
+                    addView(
+                        text(
+                            if (pending > 0) "${plural(pending, "plugin update")} will apply after reload."
+                            else "Check back later as our developers push more exciting updates!",
+                            primary,
+                            16f,
+                        ).apply { gravity = Gravity.CENTER },
+                        LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                            topMargin = dp(4)
+                            bottomMargin = dp(16)
+                        },
+                    )
+                    for ((label, onClick) in if (pending > 0) listOf("Reload" to ::reloadApp)
+                    else listOf("Refresh" to ::checkForUpdates, "Go back" to ::back))
+                        addView(
+                            button(label, null, if (label == "Go back") surface else brand, if (label == "Go back") primary else white) {
+                                if (!checking) onClick()
+                            }.apply { if (label == "Refresh" && checking) alpha = 0.5f },
+                            LinearLayout.LayoutParams(MATCH_PARENT, dp(40)).apply { topMargin = dp(8) },
+                        )
+                }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+                return@render
+            }
+
+            body.addView(
+                text(
+                    if (checking) "Checking for updates..." else "${selected.size} of ${plural(listed.size, "update")} selected",
+                    secondary,
+                ),
+                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) },
+            )
+            for (update in listed) {
+                val id = update["id"] as String
+                val manifest = manifests[id]
+                val blocker = update["blocker"] as? Map<*, *>
+                val notes = if (blocker != null) listOf(describe(blocker) to true)
+                else breaking(update, selected).map { describe(it) to true } +
+                        (update["warnings"] as List<*>).map { it as Map<*, *> }
+                            .filter { it["type"] != "breaks" && it["type"] != "conflict" }.map { describe(it) to true } +
+                        listOfNotNull((update["channelVersion"] as? String)?.let {
+                            "v$it on ${update["channel"]} can't be used with your setup, so this updates to v${update["available"]}." to false
+                        }) +
+                        (update["includes"] as List<*>).map { it as Map<*, *> }.map {
+                            (if (it["replaces"] != null) "Also updates ${nameOf(it["id"])} to v${it["version"]}."
+                            else "Also installs ${nameOf(it["id"])} v${it["version"]}.") to false
+                        }
+                val size = (update["includes"] as List<*>)
+                    .sumOf { ((it as Map<*, *>)["size"] as Number).toLong() } + (update["size"] as Number).toLong()
+
+                card(
+                    manifest?.get("name") as? String ?: id,
+                    manifest?.get("icon") as? String,
+                    buildSpannedString {
+                        inSpans(AbsoluteSizeSpan(14, true)) {
+                            color(secondary) {
+                                append("v${update["installed"]} to v${update["available"]} • ${bytes(size)}\n")
+                                inSpans(ImageSpan(icon("GlobeEarthIcon", secondary)!!.apply { setBounds(0, 0, dp(14), dp(14)) })) {
+                                    append(" ")
+                                }
+                                append(" ${repoNames[update["repo"]] ?: update["repo"]}")
+                            }
+                        }
+                        (manifest?.get("description") as? String)?.takeIf { it.isNotEmpty() }?.let { append("\n$it") }
+                        for ((note, warning) in notes) inSpans(AbsoluteSizeSpan(14, true)) {
+                            color(if (warning) danger else secondary) { bold { append("\n$note") } }
+                        }
+                    },
+                    checkbox(id in selected).apply { if (blocker != null || busy) alpha = 0.5f },
+                    onClick = if (blocker != null || busy) null else {
+                        {
+                            selected = if (id in selected) selected - id else selected + id
+                            refresh()
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    private fun checkForUpdates() {
+        checking = true
+        checkError = null
+        refresh()
+        action {
+            try {
+                if (!loadUpdates(true)) checkError = "Failed to refresh some repositories..."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                checkError = "Failed to check for updates..."
+            } finally {
+                checking = false
+                refresh()
+            }
+        }
+    }
+
+    private suspend fun loadUpdates(refresh: Boolean): Boolean {
+        var refreshed = true
+        if (refresh) {
+            val errors = userRepos().filter { it["enabled"] == true }.mapNotNull { repo ->
+                try {
+                    call("valenced.plugins.repos.refresh", repo["url"])
+                    null
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    "${repo["url"]}: ${e.message}"
+                }
+            }
+            refreshed = errors.isEmpty()
+            if (refreshed) writeSetting("valenced.settings.plugins", "lastUpdateCheck", System.currentTimeMillis(), false)
+            else alert(errors.joinToString("\n\n"))
+        }
+
+        val listed = (call("valenced.plugins.listUpdates") as List<*>).map { it as Map<*, *> }
+        var safe = listed.filter { it["blocker"] == null }.map { it["id"] as String }.toSet()
+        while (true) {
+            val breaks = listed.filter { it["id"] in safe && breaking(it, safe).isNotEmpty() }.map { it["id"] as String }
+            if (breaks.isEmpty()) break
+            safe = safe - breaks.toSet()
+        }
+        updates = listed
+        selected = safe
+        return refreshed
+    }
+
+    private fun breaking(update: Map<*, *>, selected: Set<String>) = (update["warnings"] as List<*>).map { it as Map<*, *> }
+        .filter { it["type"] == "conflict" || (it["type"] == "breaks" && it["fixedBy"].let { fix -> fix == null || fix !in selected }) }
+
+    private fun plural(count: Int, noun: String) = "$count $noun${if (count == 1) "" else "s"}"
 
     private fun showBrowse(only: String?) = page(
         "Browse Plugins",
@@ -1483,6 +1962,8 @@ private class PhoenixSettingsScreen(
         toolbar.visibility = View.GONE
         filterButton.visibility = View.GONE
         fab.visibility = View.GONE
+        fab.isEnabled = true
+        fab.alpha = 1f
         body.removeAllViews()
         body.addView(
             ProgressBar(ctx).apply { indeterminateTintList = ColorStateList.valueOf(brand) },
@@ -2003,18 +2484,26 @@ private class PhoenixSettingsScreen(
         layoutParams = ViewGroup.LayoutParams(dp(24), dp(24))
     }
 
+    private fun checkbox(checked: Boolean) = ImageView(ctx).apply {
+        scaleType = ImageView.ScaleType.CENTER
+        if (checked) setImageDrawable(icon("CheckmarkLargeIcon", white))
+        background = GradientDrawable().apply {
+            cornerRadius = dp(6).toFloat()
+            if (checked) setColor(brand)
+            else setStroke(dp(2), ColorUtils.setAlphaComponent(secondary, 0x8C))
+        }
+        layoutParams = ViewGroup.LayoutParams(dp(24), dp(24))
+    }
+
     private fun toggle(on: Boolean, onChange: (Boolean) -> Unit): View {
         val track = GradientDrawable().apply { cornerRadius = dp(16).toFloat() }
-        val knob = View(ctx).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(white)
-            }
-        }
+        val face = GradientDrawable().apply { shape = GradientDrawable.OVAL }
+        val knob = View(ctx).apply { background = face }
         var checked = on
         val paint = {
             track.setColor(if (checked) brand else field)
             track.setStroke(dp(1), if (checked) brand else outline)
+            face.setColor(if (checked || dark) white else secondary)
         }
         paint()
         knob.translationX = if (checked) dp(28).toFloat() else 0f
@@ -2034,17 +2523,23 @@ private class PhoenixSettingsScreen(
         }
     }
 
-    private fun button(label: String, icon: String? = null, onClick: () -> Unit) = LinearLayout(ctx).apply {
+    private fun button(
+        label: String,
+        icon: String? = null,
+        fill: Int = brand,
+        tint: Int = white,
+        onClick: () -> Unit,
+    ) = LinearLayout(ctx).apply {
         gravity = Gravity.CENTER
         setPadding(dp(12), 0, dp(12), 0)
-        background = RippleDrawable(ColorStateList.valueOf(pressed), shape(brand, 8), null)
+        background = RippleDrawable(ColorStateList.valueOf(pressed), shape(fill, 8), null)
         setOnClickListener { onClick() }
-        icon(icon, white)?.let { drawable ->
+        icon(icon, tint)?.let { drawable ->
             addView(ImageView(ctx).apply { setImageDrawable(drawable) }, LinearLayout.LayoutParams(dp(16), dp(16)).apply {
                 marginEnd = dp(6)
             })
         }
-        addView(text(label, white, 14f, semibold))
+        addView(text(label, tint, 14f, semibold))
     }
 
     private fun iconButton(icon: String, description: String, tint: Int, onClick: () -> Unit) = ImageView(ctx).apply {

@@ -20,6 +20,7 @@ import app.valenced.xposed.api.registerNativeMethod
 import app.valenced.xposed.tweaks.DevLoader
 import app.valenced.xposed.tweaks.base.withAppActivity
 import app.valenced.xposed.tweaks.crashRecoveryTriggered
+import app.valenced.xposed.tweaks.phoenixLaunched
 import app.valenced.xposed.tweaks.plugins.pluginPaths
 import app.valenced.xposed.tweaks.resetCrashCount
 
@@ -74,7 +75,7 @@ fun PluginScope.addBridgeMethods() {
             null
         }
 
-        registerNativeMethod("valenced.alertError") {
+        if (phoenixLaunched != true) registerNativeMethod("valenced.alertError") {
             val (error, version) = it
             val errorString = "$error"
 

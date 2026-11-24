@@ -13,7 +13,11 @@ globalThis.ErrorUtils = {
 }
 
 function onError(error: unknown) {
-    const stack = getErrorStack(error)
+    // QuickJS stacks leave out the message
+    const stack =
+        error instanceof Error
+            ? `${error}\n${getErrorStack(error)}`
+            : getErrorStack(error)
 
     callNativeMethod('valenced.alertError', [
         stack,

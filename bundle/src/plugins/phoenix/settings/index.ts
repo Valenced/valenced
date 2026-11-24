@@ -10,6 +10,7 @@ import {
     splitDispatch,
 } from '@valenced/phoenix/ui'
 import { BuildEnvironment, FullVersion } from '~constants'
+import ValencedDonate from '../../../assets/ValencedDonate.webp'
 import ValencedIcon from '../../../assets/ValencedIcon.webp'
 import type { UiOp, UiProp, UiValue } from '@valenced/phoenix/ui'
 
@@ -405,6 +406,9 @@ onDispatch((_, bytes) => {
                     discord: __BUILD_DISCORD_SERVER_URL__,
                     source: __BUILD_SOURCE_REPOSITORY_URL__,
                     license: __BUILD_LICENSE_URL__,
+                    donate: __BUILD_DONATE_URL__,
+                    donateImage: ValencedDonate,
+                    defaultRepo: __BUILD_DEFAULT_PLUGIN_REPOSITORY_URL__,
                     icon: ValencedIcon,
                 },
             ])
@@ -417,7 +421,10 @@ onDispatch((_, bytes) => {
 declare module '@valenced/modules/native' {
     interface NativeMethods {
         'valenced.phoenix.openSettings': [
-            [Record<string, number | undefined>, Record<string, string>],
+            [
+                Record<string, number | undefined>,
+                Record<string, string | undefined>,
+            ],
             null,
         ]
     }

@@ -26,6 +26,7 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 10300
         versionName = "1.3.0"
+        buildConfigField("String", "QUICKJS_VERSION", "\"${libs.versions.quickjsNg.get()}\"")
 
         externalNativeBuild {
             cmake {
