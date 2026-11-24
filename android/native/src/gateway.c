@@ -6,7 +6,6 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define VL_HOST_LIBRARY "liblibdiscord_wasm_host.so"
 #define VL_GATEWAY_GLOBAL "__valencedPhoenixGateway"
 #define VL_GATEWAY_SEED "MESSAGE_CREATE"
 #define VL_GATEWAY_DOMAIN_SEED "READY_SUPPLEMENTAL"
@@ -14,14 +13,13 @@
 #define VL_NAME_MAX 64
 #define VL_MAX_EVENTS 384
 #define VL_MAX_LISTENED 64
-#define VL_MAX_HITS 8
 
 typedef struct {
     const uint8_t *ptr;
     size_t len;
 } VlRawStr;
 
-/* Phoenix's gateway event. `rest` is opaque and passes through unchanged. */
+/* `rest` is opaque and passes through unchanged. */
 typedef struct {
     VlRawStr name;
     VlRawStr data;
@@ -59,13 +57,6 @@ static VlGatewayEntry *vl_lookup(const char *name, size_t len) {
     return NULL;
 }
 
-static bool vl_is_listened(const char *name) {
-    for (size_t i = 0; i < vl_listened_count; i++) {
-        if (strcmp(vl_listened[i], name) == 0) return true;
-    }
-    return false;
-}
-
 static bool vl_read_entry(const VlImage *image, uintptr_t base, VlGatewayEntry *out) {
     uintptr_t name_ptr, name_len, handler;
     if (!vl_image_word(image, base, &name_ptr)) return false;
@@ -90,11 +81,6 @@ static bool vl_read_entry(const VlImage *image, uintptr_t base, VlGatewayEntry *
     return true;
 }
 
-/*
- * Walks the `{name ptr, name len, handler}` table holding `seed` out in both directions, until an
- * entry stops looking like one. Events already collected are left alone, so the domain reducer
- * table only adds what the main registry does not have.
- */
 static void vl_walk(const VlImage *image, const char *seed) {
     size_t len = strlen(seed);
 
@@ -129,30 +115,6 @@ static void vl_walk(const VlImage *image, const char *seed) {
     }
 }
 
-/*
- * Points a handler slot at `value`. The registry sits in `PT_GNU_RELRO`, so the page is read-only
- * by the time Phoenix dispatches and has to be opened for the write.
- */
-static bool vl_write_slot(uintptr_t slot, uintptr_t value) {
-    long size = sysconf(_SC_PAGESIZE);
-    if (size <= 0) size = 4096;
-
-    uintptr_t page = slot & ~(uintptr_t)(size - 1);
-    size_t span = slot + sizeof(uintptr_t) - page;
-
-    if (mprotect((void *)page, span, PROT_READ | PROT_WRITE) != 0) {
-        vl_log(VL_LOG_ERROR, "Unable to make a gateway registry entry writable: %s", strerror(errno));
-        return false;
-    }
-
-    __atomic_store_n((uintptr_t *)slot, value, __ATOMIC_RELEASE);
-
-    if (mprotect((void *)page, span, PROT_READ) != 0)
-        vl_log(VL_LOG_WARN, "Unable to restore a gateway registry page: %s", strerror(errno));
-    return true;
-}
-
-/* Returns 0 to keep the event, 1 to drop it, 2 when *out holds a replacement to free. */
 static int vl_gateway_js(VlRuntime *r, const VlGatewayEntry *entry, const VlRawStr *data, char **out, size_t *out_len) {
     JSContext *ctx = r->ctx;
     int verdict = 0;
@@ -221,7 +183,10 @@ static VlHandlerResult vl_gateway_detour(void *store, const VlGatewayEvent *even
     }
 
     VlRuntime *r = vl_gateway_runtime;
-    if (!r || vl_in_js || !event->data.ptr || !vl_is_listened(entry->name))
+    bool listened = false;
+    for (size_t i = 0; i < vl_listened_count && !listened; i++)
+        listened = strcmp(vl_listened[i], entry->name) == 0;
+    if (!r || vl_in_js || !event->data.ptr || !listened)
         return entry->original(store, event, ctx);
 
     char *replacement = NULL;
@@ -319,9 +284,24 @@ int vl_gateway_hook(VlRuntime *r) {
 
     vl_gateway_runtime = r;
 
+    long size = sysconf(_SC_PAGESIZE);
+    if (size <= 0) size = 4096;
+
+    /* The registry sits in PT_GNU_RELRO, so its pages are read-only by now. */
     for (size_t i = 0; i < vl_entry_count; i++) {
-        if (!vl_write_slot(vl_entries[i].handler_slot, (uintptr_t)vl_gateway_detour))
+        uintptr_t slot = vl_entries[i].handler_slot;
+        uintptr_t page = slot & ~(uintptr_t)(size - 1);
+        size_t span = slot + sizeof(uintptr_t) - page;
+
+        if (mprotect((void *)page, span, PROT_READ | PROT_WRITE) != 0) {
+            vl_log(VL_LOG_ERROR, "Unable to make a gateway registry entry writable: %s", strerror(errno));
             return VL_GATEWAY_WRITE_FAILED;
+        }
+
+        __atomic_store_n((uintptr_t *)slot, (uintptr_t)vl_gateway_detour, __ATOMIC_RELEASE);
+
+        if (mprotect((void *)page, span, PROT_READ) != 0)
+            vl_log(VL_LOG_WARN, "Unable to restore a gateway registry page: %s", strerror(errno));
     }
 
     vl_log(VL_LOG_INFO, "Hooked %zu gateway events and %zu domain reducers",

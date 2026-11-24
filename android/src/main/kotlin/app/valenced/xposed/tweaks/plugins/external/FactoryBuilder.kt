@@ -32,14 +32,14 @@ internal fun parseExternalPluginDir(dir: File): ParsedExternalPlugin = ParsedExt
 internal fun readExternalPluginDir(
     dir: File,
     knownManifests: Map<String, PluginManifest>,
-    client: ExternalPluginClient = ExternalPluginClient.REACT_NATIVE,
+    client: ExternalPluginClient,
 ): PluginFactory = readParsedPlugin(parseExternalPluginDir(dir), knownManifests, client)
 
 /** [readExternalPluginDir] for a directory that is already parsed. */
 internal fun readParsedPlugin(
     parsed: ParsedExternalPlugin,
     knownManifests: Map<String, PluginManifest>,
-    client: ExternalPluginClient = ExternalPluginClient.REACT_NATIVE,
+    client: ExternalPluginClient,
 ): PluginFactory {
     val manifest = parsed.manifest.toPluginManifest()
     val id = manifest.id
@@ -61,17 +61,17 @@ internal fun readParsedPlugin(
 
 internal fun buildExternalFactory(
     parsed: ParsedExternalPlugin,
-    client: ExternalPluginClient = ExternalPluginClient.REACT_NATIVE,
+    client: ExternalPluginClient,
 ): PluginFactory {
     val (dir, manifest) = parsed.dir to parsed.manifest
 
     val pluginManifest = manifest.toPluginManifest()
 
-    val entryName = when (client) {
-        ExternalPluginClient.REACT_NATIVE -> "script"
-        ExternalPluginClient.PHOENIX -> "phoenix"
+    val (entryName, entry) = when (client) {
+        ExternalPluginClient.REACT_NATIVE -> "script" to manifest.dist?.script
+        ExternalPluginClient.PHOENIX -> "phoenix" to manifest.dist?.phoenix
     }
-    val scriptPath = manifest.dist?.entryFor(client)?.let { script ->
+    val scriptPath = entry?.let { script ->
         val file = File(dir, script)
         file.requireInside(dir, "dist.$entryName", script)
         if (!file.isFile) {

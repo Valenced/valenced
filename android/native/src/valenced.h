@@ -37,15 +37,14 @@ typedef struct VlRuntime {
     VlTimer *timers;
     int64_t next_timer_id;
 
-    /* callId -> { resolve, reject } for the async bridge seam. */
     JSValue pending;
     int64_t next_call_id;
 } VlRuntime;
 
 void vl_log(int level, const char *fmt, ...);
 int64_t vl_now_ms(void);
+VlRuntime *vl_from(JSContext *ctx);
 
-/* Takes the runtime lock and, at depth 0, re-points QuickJS at the calling thread's stack. */
 void vl_enter(VlRuntime *r);
 void vl_leave(VlRuntime *r);
 
@@ -61,17 +60,10 @@ void vl_timers_free(VlRuntime *r);
 void vl_install_bridge(VlRuntime *r);
 void vl_bridge_resolve(VlRuntime *r, int64_t call_id, const char *result_json);
 
-/* Returns NULL on failure. Sets *attached when the caller must call vl_detach. */
-JNIEnv *vl_env(VlRuntime *r, bool *attached);
-void vl_detach(VlRuntime *r, bool attached);
-
-/*
- * Frame verdicts travel as a tagged byte array: first byte 0 for a `false` return, 2 for `true`,
- * 1 to replace the payload with the remaining bytes. NULL passes the frame through. A non-NULL
- * [target] is passed to the handler before the frame. A negative [length] forwards the whole array.
- */
 jbyteArray vl_frame_bytes(VlRuntime *r, JNIEnv *env, const char *handler, const int64_t *target, jbyteArray in, int32_t length);
 
+#define VL_HOST_LIBRARY "liblibdiscord_wasm_host.so"
+#define VL_MAX_HITS 8
 #define VL_MAX_SEGMENTS 8
 
 typedef struct {
@@ -81,7 +73,6 @@ typedef struct {
     bool exec;
 } VlSegment;
 
-/* A library mapped in this process, at the addresses its own code sees. */
 typedef struct {
     VlSegment segments[VL_MAX_SEGMENTS];
     size_t count;
@@ -91,12 +82,9 @@ typedef struct {
 bool vl_image_load(VlImage *image, const char *name);
 const uint8_t *vl_image_read(const VlImage *image, uintptr_t addr, size_t len);
 bool vl_image_word(const VlImage *image, uintptr_t addr, uintptr_t *out);
-/* Lowest address above `after` holding `needle`, or 0. Lazy, so a caller that stops at the first
-   useful hit does not fault in the rest of a 100 MB library. */
+/* Lazy, so a caller that stops at the first hit does not fault in the rest of a 100 MB library. */
 uintptr_t vl_image_find_next(const VlImage *image, const void *needle, size_t len, bool data_only, uintptr_t after);
 size_t vl_image_pointers_to(const VlImage *image, uintptr_t target, uintptr_t *out, size_t max);
-
-/* Start of the last `.eh_frame_hdr` entry at or below `addr`, or 0 when the table is missing. */
 uintptr_t vl_image_function_containing(const VlImage *image, uintptr_t addr);
 
 #define VL_ACCESS_PATCHED 0

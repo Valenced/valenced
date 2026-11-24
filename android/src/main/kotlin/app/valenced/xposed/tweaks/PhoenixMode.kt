@@ -15,17 +15,14 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 enum class PhoenixForce { FOLLOW, PHOENIX, RN }
 
-/** Discord's choice at the last launch, or null before the decision runs. */
 var phoenixLaunched: Boolean? = null
     private set
 
-/** The loader setting [phoenixMode] read at startup. */
 var phoenixForce = PhoenixForce.FOLLOW
     private set
 
 private val decisionListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
 
-/** Xposed framework hosting the module, with its API version. */
 val xposedFramework by lazy {
     runCatching {
         val config = XposedBridge::class.java.classLoader!!.loadClass("org.lsposed.lspatch.share.LSPConfig")
@@ -35,23 +32,13 @@ val xposedFramework by lazy {
     }.getOrDefault("Xposed") + " (API ${XposedBridge.getXposedVersion()})"
 }
 
-/**
- * Runs [block] with the launch choice once [phoenixMode] records it, or right away when the
- * decision already happened. Tweaks apply before Discord decides, so this is how a consumer waits.
- */
 fun onLaunchDecision(block: (Boolean) -> Unit) {
     val decided = phoenixLaunched
     if (decided != null) block(decided)
     else decisionListeners += block
 }
 
-/**
- * Observes and optionally overrides Discord's React Native vs Phoenix launch choice.
- *
- * `PhoenixLaunch.i(ContextWrapper): Z` returns true to launch the native Phoenix client, false for
- * React Native. The method holds the "Phoenix didn't stay up for 3 launches" string. Forcing it is
- * read from `files/valenced/phoenix_mode`: `phoenix`, `rn` or `follow` (default).
- */
+// PhoenixLaunch.i returns true to launch Phoenix, it holds the "Phoenix didn't stay up for 3 launches" string
 val phoenixMode by tweak {
     registerNativeMethod("valenced.client.info") {
         mapOf(
@@ -119,7 +106,7 @@ private fun Tweak.publishLaunchDecision(launched: Boolean) {
     decisionListeners.clear()
 }
 
-private fun readForce(dataDir: String): PhoenixForce {
+internal fun readForce(dataDir: String): PhoenixForce {
     val file = File(dataDir, "files/valenced/phoenix_mode").apply { ensureFile() }
     if (!file.exists()) return PhoenixForce.FOLLOW
     return when (file.readText().trim().lowercase()) {

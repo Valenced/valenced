@@ -15,12 +15,10 @@ import app.valenced.xposed.tweaks.plugins.internal.*
 import java.io.File
 
 val pluginLoader by tweak {
-    // The launch choice is made after all tweaks register. Resolve client-specific distributions
-    // only once PhoenixLaunch has reported the client that will actually start.
-    val host = this
+    // The launch decision comes after all tweaks register.
     onLaunchDecision { phoenix ->
         pluginClient = if (phoenix) ExternalPluginClient.PHOENIX else ExternalPluginClient.REACT_NATIVE
-        host.loadPlugins(pluginClient)
+        loadPlugins(pluginClient)
     }
 }
 

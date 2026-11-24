@@ -12,7 +12,6 @@ static VlRuntime *vl_handle(jlong handle) {
     return (VlRuntime *)(intptr_t)handle;
 }
 
-/* Returns a Java string holding the pending exception's message, or NULL when there is none. */
 static jstring vl_take_error(VlRuntime *r, JNIEnv *env) {
     JSValue exc = JS_GetException(r->ctx);
     JSValue stack = JS_GetPropertyStr(r->ctx, exc, "stack");

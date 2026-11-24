@@ -12,7 +12,7 @@ globalThis.ErrorUtils = {
     reportFatalError: onError,
 }
 
-export function onError(error: unknown) {
+function onError(error: unknown) {
     const stack = getErrorStack(error)
 
     callNativeMethod('valenced.alertError', [

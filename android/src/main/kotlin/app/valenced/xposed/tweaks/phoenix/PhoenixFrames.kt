@@ -1,6 +1,5 @@
 package app.valenced.xposed.tweaks.phoenix
 
-import app.valenced.xposed.Tweak
 import app.valenced.xposed.api.registerNativeMethod
 import app.valenced.xposed.hook
 import app.valenced.xposed.loadClassOrNull
@@ -8,20 +7,21 @@ import app.valenced.xposed.method
 import app.valenced.xposed.phoenix.FrameVerdict
 import app.valenced.xposed.phoenix.PhoenixRuntime
 import app.valenced.xposed.tweak
-import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 private const val GUEST_HOST = "com.discord.nativeapp.bridge.GuestHost"
 
-/**
- * Forwards Phoenix's UI op frames to JS, which may drop or replace them.
- *
- * Phoenix sends ops out through `GuestHost.applyOps` and `GuestHost.invoke`, and takes taps and
- * text back in through the native `WasmRuntime.nativeDispatch`. The hooks are inert until
- * [PhoenixRuntime] is running, so React Native launches are unaffected.
- */
 val phoenixFrames by tweak {
-    val applyOps = findApplyOps()
+    // By name first, since JNI-registered natives keep theirs, then by shape for R8-renamed builds.
+    val applyOps = classLoader.loadClassOrNull(GUEST_HOST)
+        ?.let { runCatching { it.method("applyOps", ByteArray::class.java, Int::class.javaPrimitiveType) }.getOrNull() }
+        ?: dexFinder.findMethod {
+            matcher {
+                name("applyOps")
+                returnType("void")
+                paramTypes("byte[]", "int")
+            }
+        }
     if (applyOps == null) log.w("No GuestHost.applyOps(byte[], int), outgoing op frames are not hooked")
     else applyOps.hook {
         before {
@@ -34,7 +34,15 @@ val phoenixFrames by tweak {
         }
     }
 
-    val invoke = findInvoke()
+    val invoke = classLoader.loadClassOrNull(GUEST_HOST)
+        ?.let { runCatching { it.method("invoke", ByteArray::class.java) }.getOrNull() }
+        ?: dexFinder.findMethod {
+            matcher {
+                name("invoke")
+                returnType("byte[]")
+                paramTypes("byte[]")
+            }
+        }
     if (invoke == null) log.w("No GuestHost.invoke(byte[]), guest calls are not hooked")
     else invoke.hook {
         before {
@@ -44,7 +52,14 @@ val phoenixFrames by tweak {
         }
     }
 
-    val dispatch = findDispatch()
+    val dispatch = dexFinder.findMethod {
+        matcher {
+            name("nativeDispatch")
+            modifiers(Modifier.NATIVE)
+            returnType("boolean")
+            paramTypes("long", "byte[]")
+        }
+    }
     if (dispatch == null) log.w("No native dispatch method, incoming frames are not hooked")
     else dispatch.hook {
         before {
@@ -68,39 +83,3 @@ val phoenixFrames by tweak {
     }
     registerNativeMethod("valenced.phoenix.uiProps") { uiProps?.toList() }
 }
-
-/**
- * Resolves a frame method by its documented name first, since JNI-registered natives keep theirs,
- * then by shape for builds where R8 renamed it.
- */
-private fun Tweak.findApplyOps(): Method? =
-    classLoader.loadClassOrNull(GUEST_HOST)
-        ?.let { runCatching { it.method("applyOps", ByteArray::class.java, Int::class.javaPrimitiveType) }.getOrNull() }
-        ?: dexFinder.findMethod {
-            matcher {
-                name("applyOps")
-                returnType("void")
-                paramTypes("byte[]", "int")
-            }
-        }
-
-private fun Tweak.findInvoke(): Method? =
-    classLoader.loadClassOrNull(GUEST_HOST)
-        ?.let { runCatching { it.method("invoke", ByteArray::class.java) }.getOrNull() }
-        ?: dexFinder.findMethod {
-            matcher {
-                name("invoke")
-                returnType("byte[]")
-                paramTypes("byte[]")
-            }
-        }
-
-private fun Tweak.findDispatch(): Method? =
-    dexFinder.findMethod {
-        matcher {
-            name("nativeDispatch")
-            modifiers(Modifier.NATIVE)
-            returnType("boolean")
-            paramTypes("long", "byte[]")
-        }
-    }

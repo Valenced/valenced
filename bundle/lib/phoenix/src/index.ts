@@ -24,7 +24,7 @@ const { opsListeners, invokeListeners, dispatchListeners } = phoenixBus
  */
 export function onOps(listener: OpsListener) {
     opsListeners.add(listener)
-    frames.onApplyOps = applyOpsFrame
+    frames.onApplyOps = bytes => runFrameListeners(opsListeners, bytes)
 
     return () => {
         opsListeners.delete(listener)
@@ -39,7 +39,7 @@ export function onOps(listener: OpsListener) {
  */
 export function onInvoke(listener: InvokeListener) {
     invokeListeners.add(listener)
-    frames.onInvoke = invokeFrame
+    frames.onInvoke = bytes => runFrameListeners(invokeListeners, bytes)
 
     return () => {
         invokeListeners.delete(listener)
@@ -62,22 +62,13 @@ export function onDispatch(listener: DispatchListener) {
     }
 }
 
-function applyOpsFrame(bytes: Uint8Array) {
+function runFrameListeners(
+    listeners: Set<OpsListener | InvokeListener>,
+    bytes: Uint8Array,
+) {
     let payload: Uint8Array | undefined
 
-    for (const listener of opsListeners) {
-        const result = listener(payload ?? bytes)
-        if (result === false) return false
-        if (result) payload = result
-    }
-
-    return payload
-}
-
-function invokeFrame(bytes: Uint8Array) {
-    let payload: Uint8Array | undefined
-
-    for (const listener of invokeListeners) {
+    for (const listener of listeners) {
         const result = listener(payload ?? bytes)
         if (result === false) return false
         if (result) payload = result

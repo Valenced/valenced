@@ -66,12 +66,7 @@ data class ExternalDist(
     val script: String? = null,
     val phoenix: String? = null,
     val android: ExternalAndroidDist? = null,
-) {
-    fun entryFor(client: ExternalPluginClient): String? = when (client) {
-        ExternalPluginClient.REACT_NATIVE -> script
-        ExternalPluginClient.PHOENIX -> phoenix
-    }
-}
+)
 
 @Serializable
 data class ExternalAndroidDist(

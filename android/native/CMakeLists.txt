@@ -14,8 +14,7 @@ set(QJS_BUILD_LIBC OFF CACHE BOOL "" FORCE)
 set(QJS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(QJS_BUILD_WERROR OFF CACHE BOOL "" FORCE)
 
-# EXCLUDE_FROM_ALL keeps the qjs and qjsc executables out of the build. They would
-# cross-compile for Android and never run.
+# EXCLUDE_FROM_ALL keeps the qjs and qjsc executables, useless on Android, out of the build.
 add_subdirectory("${QUICKJS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/quickjs" EXCLUDE_FROM_ALL)
 
 add_library(valenced_phoenix SHARED

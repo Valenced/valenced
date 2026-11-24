@@ -11,7 +11,6 @@ kotlin {
     jvmToolchain(libs.versions.javaVersion.get().toInt())
 }
 
-/** The quickjs-ng tree the Phoenix runtime links against, filled by [FetchQuickjs]. */
 val quickjsDir = layout.projectDirectory
     .dir("native/third_party/quickjs-${libs.versions.quickjsNg.get()}")
     .asFile.invariantSeparatorsPath
@@ -107,7 +106,6 @@ dependencies {
     testImplementation(libs.kotlin.test)
 }
 
-/** Downloads the pinned quickjs-ng release and verifies it before CMake sees it. */
 abstract class FetchQuickjs @Inject constructor(
     private val fs: FileSystemOperations,
     private val archives: ArchiveOperations,
@@ -167,7 +165,6 @@ val fetchQuickjs = tasks.register<FetchQuickjs>("fetchQuickjs") {
 tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }
     .configureEach { dependsOn(fetchQuickjs) }
 
-/** A `:bundle` output per build type. [flavor] is "" for the React Native bundle, "Phoenix" for the native client. */
 fun bundleFiles(flavor: String) = listOf("debug", "release").associateWith { buildType ->
     val name = "${buildType}${flavor}Bundle"
     val scope = configurations.dependencyScope(name)
@@ -195,8 +192,7 @@ abstract class BundleAssets @Inject constructor(private val fs: FileSystemOperat
     @TaskAction
     fun copy() {
         fs.sync {
-            // Both bundles ship a manifest.json. Only the React Native one is read on device, so
-            // the Phoenix bundle comes over without its manifest to avoid the name clash.
+            // Only the React Native manifest.json is read on device, the Phoenix one would clash with it.
             from(bundle) { include("valenced.bundle", "manifest.json") }
             from(phoenixBundle) { include("valenced.phoenix.bundle") }
             into(outputDir)

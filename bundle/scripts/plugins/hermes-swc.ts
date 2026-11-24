@@ -2,11 +2,6 @@ import { transform } from '@swc/core'
 import type { JscTarget } from '@swc/core'
 import type { RolldownPlugin } from 'rolldown'
 
-/**
- * Transforms TS and JSX. Downlevels for Hermes unless a target is given.
- *
- * @param target Engine target, for runtimes that need no Hermes workarounds.
- */
 export default function hermesSwcPlugin(target?: JscTarget): RolldownPlugin {
     return {
         name: 'swc',

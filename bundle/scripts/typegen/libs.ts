@@ -115,7 +115,6 @@ export function getLibraries(): LibraryModule[] {
             ['', 'patcher'],
             ['types', NoGlobal],
         ]),
-        // Phoenix has standalone client APIs and a JS plugin lifecycle host.
         library(phoenix, [
             ['', NoGlobal],
             ['bytes', NoGlobal],

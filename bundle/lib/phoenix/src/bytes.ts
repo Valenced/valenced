@@ -4,7 +4,6 @@ export class ByteWriter {
     private view = new DataView(this.buffer.buffer)
     private cursor = 0
 
-    /** Bytes written so far. */
     get length() {
         return this.cursor
     }
@@ -94,7 +93,6 @@ export class ByteWriter {
         return this.bytes(encodeUtf8(value))
     }
 
-    /** Copy of everything written. */
     toBytes() {
         return this.buffer.slice(0, this.cursor)
     }
@@ -128,7 +126,6 @@ export class ByteReader {
         )
     }
 
-    /** Bytes read so far. */
     get offset() {
         return this.cursor
     }

@@ -34,7 +34,6 @@ class PluginPaths(
     /** Parent of the per-slot storage roots. */
     val storage: Path = root / "storage"
 
-    /** Plugin settings shared by slots and clients. */
     val settings: Path = root / "settings"
 
     val states: Path = root / "states"

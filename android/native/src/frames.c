@@ -1,56 +1,34 @@
 #include "valenced.h"
 
-#include <stdlib.h>
-
 #define VL_FRAMES_GLOBAL "__valencedPhoenixFrames"
 
-/* Returns the frame handler, or JS_UNDEFINED when the bundle has not registered one. */
-static JSValue vl_frame_handler(VlRuntime *r, const char *name) {
+jbyteArray vl_frame_bytes(VlRuntime *r, JNIEnv *env, const char *handler, const int64_t *target, jbyteArray in, int32_t length) {
     JSContext *ctx = r->ctx;
 
     JSValue g = JS_GetGlobalObject(ctx);
     JSValue frames = JS_GetPropertyStr(ctx, g, VL_FRAMES_GLOBAL);
     JS_FreeValue(ctx, g);
 
-    if (!JS_IsObject(frames)) {
-        JS_FreeValue(ctx, frames);
-        return JS_UNDEFINED;
-    }
-
-    JSValue handler = JS_GetPropertyStr(ctx, frames, name);
+    JSValue fn = JS_IsObject(frames) ? JS_GetPropertyStr(ctx, frames, handler) : JS_UNDEFINED;
     JS_FreeValue(ctx, frames);
 
-    if (!JS_IsFunction(ctx, handler)) {
-        JS_FreeValue(ctx, handler);
-        return JS_UNDEFINED;
+    if (!JS_IsFunction(ctx, fn)) {
+        JS_FreeValue(ctx, fn);
+        return NULL;
     }
-    return handler;
-}
-
-/* Copies the first [length] bytes of [in] into a Uint8Array, all of it when [length] is negative. Returns JS_EXCEPTION on failure. */
-static JSValue vl_frame_input(VlRuntime *r, JNIEnv *env, jbyteArray in, int32_t length) {
-    if (!in) return JS_NewUint8ArrayCopy(r->ctx, NULL, 0);
-
-    jsize size = (*env)->GetArrayLength(env, in);
-    if (length >= 0 && length < size) size = length;
-    void *bytes = (*env)->GetPrimitiveArrayCritical(env, in, NULL);
-    if (!bytes) return JS_EXCEPTION;
-
-    JSValue out = JS_NewUint8ArrayCopy(r->ctx, (const uint8_t *)bytes, (size_t)size);
-    (*env)->ReleasePrimitiveArrayCritical(env, in, bytes, JNI_ABORT);
-    return out;
-}
-
-jbyteArray vl_frame_bytes(VlRuntime *r, JNIEnv *env, const char *handler, const int64_t *target, jbyteArray in, int32_t length) {
-    JSContext *ctx = r->ctx;
-
-    JSValue fn = vl_frame_handler(r, handler);
-    if (JS_IsUndefined(fn)) return NULL;
 
     JSValue argv[2];
     int argc = 0;
     if (target) argv[argc++] = JS_NewInt64(ctx, *target);
-    argv[argc++] = vl_frame_input(r, env, in, length);
+    if (!in) {
+        argv[argc++] = JS_NewUint8ArrayCopy(ctx, NULL, 0);
+    } else {
+        jsize size = (*env)->GetArrayLength(env, in);
+        if (length >= 0 && length < size) size = length;
+        void *bytes = (*env)->GetPrimitiveArrayCritical(env, in, NULL);
+        argv[argc++] = bytes ? JS_NewUint8ArrayCopy(ctx, (const uint8_t *)bytes, (size_t)size) : JS_EXCEPTION;
+        if (bytes) (*env)->ReleasePrimitiveArrayCritical(env, in, bytes, JNI_ABORT);
+    }
     if (JS_IsException(argv[argc - 1])) {
         for (int i = 0; i < argc; i++) JS_FreeValue(ctx, argv[i]);
         JS_FreeValue(ctx, fn);

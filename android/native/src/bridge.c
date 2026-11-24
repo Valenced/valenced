@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-JNIEnv *vl_env(VlRuntime *r, bool *attached) {
+static JNIEnv *vl_env(VlRuntime *r, bool *attached) {
     *attached = false;
 
     JNIEnv *env = NULL;
@@ -17,15 +17,10 @@ JNIEnv *vl_env(VlRuntime *r, bool *attached) {
     return env;
 }
 
-void vl_detach(VlRuntime *r, bool attached) {
+static void vl_detach(VlRuntime *r, bool attached) {
     if (attached) (*r->vm)->DetachCurrentThread(r->vm);
 }
 
-static VlRuntime *vl_from(JSContext *ctx) {
-    return JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
-}
-
-/* Logs and clears a pending Java exception. Returns true when one was pending. */
 static bool vl_clear_java_exception(JNIEnv *env, const char *where) {
     if (!(*env)->ExceptionCheck(env)) return false;
     vl_log(VL_LOG_ERROR, "%s threw on the Java side", where);
@@ -34,15 +29,14 @@ static bool vl_clear_java_exception(JNIEnv *env, const char *where) {
     return true;
 }
 
-/* Returns a freshly allocated JSON string for [value], or NULL. */
-static char *vl_stringify(JSContext *ctx, JSValueConst value, size_t *len) {
+static char *vl_stringify(JSContext *ctx, JSValueConst value) {
     JSValue json = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED);
     if (JS_IsException(json) || JS_IsUndefined(json)) {
         JS_FreeValue(ctx, json);
         return NULL;
     }
 
-    const char *text = JS_ToCStringLen(ctx, len, json);
+    const char *text = JS_ToCString(ctx, json);
     char *copy = text ? strdup(text) : NULL;
     if (text) JS_FreeCString(ctx, text);
     JS_FreeValue(ctx, json);
@@ -55,8 +49,7 @@ static JSValue vl_js_call_sync(JSContext *ctx, JSValueConst this_val, int argc, 
 
     if (argc < 1) return JS_ThrowTypeError(ctx, "A bridge call needs a payload");
 
-    size_t len = 0;
-    char *payload = vl_stringify(ctx, argv[0], &len);
+    char *payload = vl_stringify(ctx, argv[0]);
     if (!payload) return JS_ThrowTypeError(ctx, "The bridge payload is not JSON serializable");
 
     bool attached = false;
@@ -104,8 +97,7 @@ static JSValue vl_js_call_async(JSContext *ctx, JSValueConst this_val, int argc,
     JSValue promise = JS_NewPromiseCapability(ctx, funcs);
     if (JS_IsException(promise)) return promise;
 
-    size_t len = 0;
-    char *payload = argc > 0 ? vl_stringify(ctx, argv[0], &len) : NULL;
+    char *payload = argc > 0 ? vl_stringify(ctx, argv[0]) : NULL;
 
     bool attached = false;
     JNIEnv *env = payload ? vl_env(r, &attached) : NULL;

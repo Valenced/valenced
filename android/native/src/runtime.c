@@ -27,9 +27,6 @@ static const int kAndroidPriority[] = {
 };
 
 void vl_log(int level, const char *fmt, ...) {
-    if (level < VL_LOG_DEBUG) level = VL_LOG_DEBUG;
-    if (level > VL_LOG_ERROR) level = VL_LOG_ERROR;
-
     va_list args;
     va_start(args, fmt);
     __android_log_vprint(kAndroidPriority[level], VL_TAG, fmt, args);
@@ -40,12 +37,6 @@ int64_t vl_now_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-}
-
-static double vl_now_ms_precise(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
 }
 
 void vl_enter(VlRuntime *r) {
@@ -106,20 +97,10 @@ void vl_timers_free(VlRuntime *r) {
     }
 }
 
-static int64_t vl_timers_next_due(VlRuntime *r) {
-    int64_t due = -1;
-    for (VlTimer *t = r->timers; t; t = t->next)
-        if (due < 0 || t->due_ms < due) due = t->due_ms;
-    return due;
-}
-
 static void vl_timers_run_due(VlRuntime *r) {
     int64_t now = vl_now_ms();
 
-    /*
-     * One pass over a snapshot of the due ids. A handler can add or clear timers, so the list
-     * is re-walked for every id instead of held across the call.
-     */
+    /* A handler can add or clear timers, so the list is re-walked for every due id. */
     int64_t ids[64];
     int count = 0;
     for (VlTimer *t = r->timers; t && count < 64; t = t->next)
@@ -172,7 +153,9 @@ static void *vl_pump(void *arg) {
         }
         vl_timers_run_due(r);
         vl_drain_jobs(r);
-        int64_t next = vl_timers_next_due(r);
+        int64_t next = -1;
+        for (VlTimer *t = r->timers; t; t = t->next)
+            if (next < 0 || t->due_ms < next) next = t->due_ms;
         vl_leave(r);
 
         pthread_mutex_lock(&r->pump_lock);
@@ -229,7 +212,7 @@ void vl_pump_stop(VlRuntime *r) {
     r->pump_started = false;
 }
 
-static VlRuntime *vl_from(JSContext *ctx) {
+VlRuntime *vl_from(JSContext *ctx) {
     return JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
 }
 
@@ -252,7 +235,10 @@ static JSValue vl_js_now(JSContext *ctx, JSValueConst this_val, int argc, JSValu
     (void)this_val;
     (void)argc;
     (void)argv;
-    return JS_NewFloat64(ctx, vl_now_ms_precise());
+
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return JS_NewFloat64(ctx, (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0);
 }
 
 static JSValue vl_js_set_timer(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic) {
@@ -307,10 +293,6 @@ static JSValue vl_js_clear_timer(JSContext *ctx, JSValueConst this_val, int argc
     return JS_UNDEFINED;
 }
 
-/*
- * queueMicrotask, console and the performance object sit on top of what the C layer installs,
- * so they live here rather than in another pile of JSCFunctions.
- */
 static const char kPrelude[] =
     "globalThis.global = globalThis;"
     "globalThis.performance = { now: __valencedNow };"

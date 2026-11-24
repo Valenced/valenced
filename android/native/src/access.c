@@ -5,9 +5,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define VL_HOST_LIBRARY "liblibdiscord_wasm_host.so"
 #define VL_EXPERIMENT "2026-11-phoenix-app-access"
-#define VL_MAX_HITS 8
 
 #if defined(__x86_64__)
 static const uint8_t vl_return_true[] = { 0xB0, 0x01, 0xC3 };
@@ -35,11 +33,7 @@ static bool vl_wanted(const uintptr_t *slots, size_t count, uintptr_t target) {
     return false;
 }
 
-/*
- * Function starts holding a PC-relative reference to one of `slots`. On x86_64 that is a REX.W
- * `lea` or `mov` from `[rip + disp32]`, on arm64 an `adrp` followed within four instructions by an
- * `add` or 64-bit `ldr` on the same register.
- */
+/* x86_64: REX.W lea/mov [rip + disp32]. arm64: adrp, then add or 64-bit ldr on it within 4 instructions. */
 static size_t vl_references(const VlImage *image, const uintptr_t *slots, size_t slot_count, uintptr_t *out, size_t max) {
     size_t found = 0;
 
@@ -98,28 +92,6 @@ static size_t vl_references(const VlImage *image, const uintptr_t *slots, size_t
     return found;
 }
 
-static bool vl_write_code(uintptr_t addr, const uint8_t *bytes, size_t len) {
-    long size = sysconf(_SC_PAGESIZE);
-    if (size <= 0) size = 4096;
-
-    uintptr_t page = addr & ~(uintptr_t)(size - 1);
-    size_t span = addr + len - page;
-
-    if (mprotect((void *)page, span, PROT_READ | PROT_WRITE | PROT_EXEC) != 0
-        && mprotect((void *)page, span, PROT_READ | PROT_WRITE) != 0) {
-        vl_log(VL_LOG_ERROR, "Unable to make the access evaluator writable: %s", strerror(errno));
-        return false;
-    }
-
-    memcpy((void *)addr, bytes, len);
-
-    if (mprotect((void *)page, span, PROT_READ | PROT_EXEC) != 0)
-        vl_log(VL_LOG_WARN, "Unable to restore the access evaluator page: %s", strerror(errno));
-
-    __builtin___clear_cache((char *)addr, (char *)(addr + len));
-    return true;
-}
-
 #endif
 
 int vl_access_patch(void) {
@@ -132,8 +104,6 @@ int vl_access_patch(void) {
 
     VlImage image;
     if (!vl_image_load(&image, VL_HOST_LIBRARY)) return VL_ACCESS_NOT_LOADED;
-
-    int64_t started = vl_now_ms();
 
     uintptr_t strings[VL_MAX_HITS];
     size_t string_count = 0;
@@ -162,7 +132,6 @@ int vl_access_patch(void) {
 
     uintptr_t functions[VL_MAX_HITS];
     size_t count = vl_references(&image, slots, slot_count, functions, VL_MAX_HITS);
-    vl_log(VL_LOG_DEBUG, "Scanned %s in %lld ms", VL_HOST_LIBRARY, (long long)(vl_now_ms() - started));
 
     if (count != 1) {
         vl_log(VL_LOG_WARN, "Expected one function referencing %s, found %zu, the access gate is left alone",
@@ -176,7 +145,24 @@ int vl_access_patch(void) {
         return VL_ACCESS_ALREADY;
     }
 
-    if (!vl_write_code(functions[0], vl_return_true, sizeof(vl_return_true))) return VL_ACCESS_WRITE_FAILED;
+    long size = sysconf(_SC_PAGESIZE);
+    if (size <= 0) size = 4096;
+
+    uintptr_t page = functions[0] & ~(uintptr_t)(size - 1);
+    size_t span = functions[0] + sizeof(vl_return_true) - page;
+
+    if (mprotect((void *)page, span, PROT_READ | PROT_WRITE | PROT_EXEC) != 0
+        && mprotect((void *)page, span, PROT_READ | PROT_WRITE) != 0) {
+        vl_log(VL_LOG_ERROR, "Unable to make the access evaluator writable: %s", strerror(errno));
+        return VL_ACCESS_WRITE_FAILED;
+    }
+
+    memcpy((void *)functions[0], vl_return_true, sizeof(vl_return_true));
+
+    if (mprotect((void *)page, span, PROT_READ | PROT_EXEC) != 0)
+        vl_log(VL_LOG_WARN, "Unable to restore the access evaluator page: %s", strerror(errno));
+
+    __builtin___clear_cache((char *)functions[0], (char *)(functions[0] + sizeof(vl_return_true)));
 
     patched = true;
     vl_log(VL_LOG_INFO, "Patched the Phoenix access evaluator at %p", (void *)functions[0]);

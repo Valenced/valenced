@@ -21,13 +21,7 @@ object ValencedConstants {
      */
     const val BUNDLE_ASSET = "assets://valenced.bundle"
 
-    /**
-     * Plain JS bundle for Discord's Phoenix client, built by the `:bundle` project and evaluated
-     * by [app.valenced.xposed.phoenix.PhoenixRuntime]. Phoenix has no Hermes.
-     */
     const val PHOENIX_BUNDLE_ASSET = "valenced.phoenix.bundle"
-
-    /** The QuickJS host Valenced ships, built from `android/native`. */
     const val PHOENIX_LIBRARY = "valenced_phoenix"
 }
 
