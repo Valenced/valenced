@@ -51,6 +51,7 @@
     "@valenced/json-storage": "workspace:*",
     "@valenced/modules": "workspace:*",
     "@valenced/patcher": "workspace:*",
+    "@valenced/phoenix": "workspace:*",
     "@valenced/plugins": "workspace:*",
     "@valenced/react": "workspace:*",
     "@valenced/utils": "workspace:*",

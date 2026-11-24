@@ -22,6 +22,7 @@ import {
     getBundleManifest,
     getInternalPluginManifests,
     PluginsDir,
+    Stages,
 } from './manifest'
 import asRequire from './plugins/as-require'
 import hermesSwcPlugin from './plugins/hermes-swc'
@@ -37,23 +38,43 @@ const GeneratedAssetsDir = `${__dirname}/../dist/assets/generated`
 const Dev =
     process.argv.includes('--dev') || process.env.NODE_ENV === 'development'
 const OutDirArg = process.argv.indexOf('--out')
-const OutDir = OutDirArg === -1 ? 'dist' : process.argv[OutDirArg + 1]!
+const OutDir = OutDirArg === -1 ? undefined : process.argv[OutDirArg + 1]!
+const TargetArg = process.argv.indexOf('--target')
+const Target = TargetArg === -1 ? 'rn' : process.argv[TargetArg + 1]!
+
+if (Target !== 'rn' && Target !== 'phoenix')
+    throw new Error(`Unknown --target: ${Target}. Use "rn" or "phoenix".`)
 
 // If this file is being run directly, build the project
 if (import.meta.main) build()
 
-export default async function build(dev = Dev, log = true) {
-    await rm(GeneratedAssetsDir, { recursive: true, force: true })
-        .then(() =>
-            console.debug(chalk.gray('\u{1F5BB} Deleted old generated assets')),
-        )
-        .catch()
+export default async function build(
+    dev = Dev,
+    log = true,
+    target: 'rn' | 'phoenix' = Target,
+) {
+    const phoenix = target === 'phoenix'
+    // Separate directories, so the two targets don't overwrite each other's manifest.
+    const outDir = OutDir ?? (phoenix ? 'dist/phoenix' : 'dist')
+
+    // Generated assets are React Native only, and both targets share the directory.
+    if (!phoenix)
+        await rm(GeneratedAssetsDir, { recursive: true, force: true })
+            .then(() =>
+                console.debug(
+                    chalk.gray('\u{1F5BB} Deleted old generated assets'),
+                ),
+            )
+            .catch()
 
     const start = performance.now()
 
-    if (log) console.info(chalk.gray('\u{1F5BB} Generating assets...'))
-    await generateAssets()
-    if (log) console.info(chalk.cyanBright('\u{1F5BB} Assets generated'))
+    if (!phoenix) {
+        if (log) console.info(chalk.gray('\u{1F5BB} Generating assets...'))
+        await generateAssets()
+        if (log) console.info(chalk.cyanBright('\u{1F5BB} Assets generated'))
+    }
+
     if (log) console.info(chalk.gray('\u{1F5CE} Compiling JS...'))
 
     // The last commit touching the bundle, so unrelated commits don't change the output.
@@ -62,7 +83,7 @@ export default async function build(dev = Dev, log = true) {
         .trim()
 
     const bundle = await rolldown({
-        input: 'src/index.ts',
+        input: phoenix ? 'src/phoenix.ts' : 'src/index.ts',
         platform: 'browser',
         external: [/^node:/],
         optimization: {
@@ -124,41 +145,47 @@ export default async function build(dev = Dev, log = true) {
             asRequire(),
             shimAliases(ShimsDir),
             importGlobPlugin(),
-            hermesSwcPlugin(),
+            // QuickJS-ng needs no Hermes downleveling. Keep importDefer after this.
+            hermesSwcPlugin(phoenix ? 'es2020' : undefined),
             importDefer(),
-            hermesCPlugin({
-                flags: [
-                    dev ? '-Og' : '-O',
-                    dev ? '-g3' : '-g1',
-                    '-reuse-prop-cache',
-                    '-optimized-eval',
-                    '-strict',
-                    '-finline',
-                ],
-                before(ver) {
-                    if (log) {
-                        console.debug(
-                            chalk.cyanBright(
-                                '\u{1F5CE} JS compilation finished...',
-                            ),
-                        )
+            // Phoenix runs plain JS, so there is no bytecode step.
+            ...(phoenix
+                ? []
+                : [
+                      hermesCPlugin({
+                          flags: [
+                              dev ? '-Og' : '-O',
+                              dev ? '-g3' : '-g1',
+                              '-reuse-prop-cache',
+                              '-optimized-eval',
+                              '-strict',
+                              '-finline',
+                          ],
+                          before(ver) {
+                              if (log) {
+                                  console.debug(
+                                      chalk.cyanBright(
+                                          '\u{1F5CE} JS compilation finished...',
+                                      ),
+                                  )
 
-                        console.debug(
-                            chalk.gray(
-                                `\u{1F5CE} Compiling bytecode with ${ver}...`,
-                            ),
-                        )
-                    }
-                },
-                after() {
-                    if (log)
-                        console.debug(
-                            chalk.cyanBright(
-                                '\u{1F5CE} Bytecode compilation finished',
-                            ),
-                        )
-                },
-            }),
+                                  console.debug(
+                                      chalk.gray(
+                                          `\u{1F5CE} Compiling bytecode with ${ver}...`,
+                                      ),
+                                  )
+                              }
+                          },
+                          after() {
+                              if (log)
+                                  console.debug(
+                                      chalk.cyanBright(
+                                          '\u{1F5CE} Bytecode compilation finished',
+                                      ),
+                                  )
+                          },
+                      }),
+                  ]),
         ],
     })
 
@@ -184,7 +211,7 @@ export default async function build(dev = Dev, log = true) {
         esModule: false,
         minifyInternalExports: true,
         hoistTransitiveImports: false,
-        file: `${OutDir}/valenced.js`,
+        file: `${outDir}/${phoenix ? 'valenced.phoenix.bundle' : 'valenced.js'}`,
         format: 'iife',
         keepNames: true,
         postFooter: `//# sourceURL=Valenced`,
@@ -200,10 +227,14 @@ export default async function build(dev = Dev, log = true) {
 
     const manifest = getBundleManifest(
         pkg.version,
-        await getInternalPluginManifests(PluginsDir, dev),
+        await getInternalPluginManifests(
+            PluginsDir,
+            dev,
+            phoenix ? Stages.phoenix : Stages.rn,
+        ),
     )
 
-    await writeFile(`${OutDir}/manifest.json`, JSON.stringify(manifest))
+    await writeFile(`${outDir}/manifest.json`, JSON.stringify(manifest))
 
     if (log)
         console.info(chalk.cyanBright('\u{1F5BB} Internal manifests emitted'))

@@ -36,7 +36,9 @@ const nativeSyncCall = (payload: object) => {
 }
 
 const nativeAsyncCall = (payload: object) => {
-    const bridgeAsync = (globalThis as any)[Symbol.for('valenced.bridge.call.async')]
+    const bridgeAsync = (globalThis as any)[
+        Symbol.for('valenced.bridge.call.async')
+    ]
     if (bridgeAsync) return bridgeAsync(payload)
 
     const BridgePromise = getNativeModule<{
@@ -158,21 +160,23 @@ function _returnJSCall(payload: object) {
     callNativeMethodSync(CallableReturnNativeMethodName, [payload])
 }
 
-RN$registerCallableModule(
-    CallableModuleName,
-    () =>
-        new Proxy(ExposedJSMethods, {
-            get(target, prop: string) {
-                const method = target[prop]
-                if (!method)
-                    return () => {
-                        // Can't catch this native side, this will crash the app
-                        throw new Error(`JS method not found: ${prop}`)
-                    }
-                return method
-            },
-        }),
-)
+const callableModuleProvider = () =>
+    new Proxy(ExposedJSMethods, {
+        get(target, prop: string) {
+            const method = target[prop]
+            if (!method)
+                return () =>
+                    _returnJSCall({ error: `JS method not found: ${prop}` })
+            return method
+        },
+    })
+
+// Phoenix has no React Native callable module registry, so the host reads this global instead.
+if (typeof RN$registerCallableModule === 'function')
+    RN$registerCallableModule(CallableModuleName, callableModuleProvider)
+else
+    (globalThis.__valencedCallableModules ??= {})[CallableModuleName] =
+        callableModuleProvider()
 
 export interface BridgeInfo {
     name: string

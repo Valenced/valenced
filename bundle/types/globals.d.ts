@@ -1,4 +1,6 @@
 import type { Metro } from '@valenced/modules/types'
+import type { PhoenixFrames, PhoenixGateway } from '@valenced/phoenix/types'
+import type { AnyFunction } from '@valenced/utils/types'
 import type {
     ImageProps,
     ScrollViewProps,
@@ -115,4 +117,19 @@ declare global {
     var performance: {
         now(): number
     }
+}
+
+/// PHOENIX
+
+declare global {
+    /** Set by the Phoenix host only. Absent under React Native. */
+    var __VALENCED_CLIENT__: 'phoenix' | undefined
+
+    /** Phoenix equivalent of React Native's callable module registry. */
+    var __valencedCallableModules:
+        | Record<string, Record<string, AnyFunction>>
+        | undefined
+
+    var __valencedPhoenixFrames: PhoenixFrames | undefined
+    var __valencedPhoenixGateway: PhoenixGateway | undefined
 }

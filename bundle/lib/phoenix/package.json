@@ -1,0 +1,25 @@
+{
+  "name": "@valenced/phoenix",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./bytes": {
+      "default": "./src/bytes.ts"
+    },
+    "./gateway": {
+      "default": "./src/gateway.ts"
+    },
+    "./plugins": {
+      "default": "./src/plugins.ts"
+    },
+    "./types": {
+      "types": "./src/types.ts"
+    },
+    "./ui": {
+      "default": "./src/ui.ts"
+    }
+  }
+}

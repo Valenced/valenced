@@ -9,6 +9,12 @@ import type { InternalPluginManifest } from '@valenced/plugins/_'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 export const PluginsDir = `${__dirname}/../src/plugins`
 
+/** Stage directories each bundle loads. */
+export const Stages = {
+    rn: ['preinit', 'init', 'start'],
+    phoenix: ['phoenix'],
+} as const
+
 interface BundleManifestPlugin {
     id: string
     /** Cannot be turned off. Implies {@link enabledByDefault}. */
@@ -48,12 +54,14 @@ interface RawBundleManifestPlugin
 export async function getInternalPluginManifests(
     root = PluginsDir,
     dev = false,
+    stages?: readonly string[],
 ): Promise<BundleManifestPlugin[]> {
     const manifests: BundleManifestPlugin[] = []
     const seen = new Map<string, string>()
 
     for (const stage of await readdir(root, { withFileTypes: true })) {
         if (!stage.isDirectory()) continue
+        if (stages && !stages.includes(stage.name)) continue
 
         const stageDir = `${root}/${stage.name}`
 

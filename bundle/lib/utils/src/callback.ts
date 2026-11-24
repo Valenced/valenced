@@ -23,8 +23,9 @@ const now = (cb: () => any) => {
  * @param cb The callback to run.
  */
 export const asap = (cb: AnyFunction) => {
-    // @ts-expect-error
-    ;(HermesInternal.useEngineQueue()
+    ;(typeof HermesInternal !== 'undefined' &&
+        // @ts-expect-error
+        HermesInternal.useEngineQueue()
         ? // @ts-expect-error
           HermesInternal.enqueueJob
         : (globalThis.queueMicrotask ??

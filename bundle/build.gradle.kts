@@ -83,24 +83,33 @@ val installDependencies = tasks.register<DenoTask>("installDependencies") {
     arguments = listOf("install", "--frozen") + cachedOnly
 }
 
-fun registerBundle(variant: String, dev: Boolean) = tasks.register<DenoTask>("assemble${variant.replaceFirstChar(Char::uppercase)}Bundle") {
-    group = "build"
-    description = "Builds the $variant Hermes bundle and its manifest."
-    dependsOn(installDependencies)
-    denoVersion = pinnedDenoVersion
-    workDir = layout.projectDirectory
-    sources.from(bundleSources)
-    commit = bundleCommit
-    outputDir = layout.buildDirectory.dir("bundle/$variant")
-    arguments = listOf("run", "--permission-set=build") + cachedOnly +
-        listOf("scripts/build.ts", "--reproducible", "--out", "build/bundle/$variant") +
-        (if (dev) listOf("--dev") else emptyList())
+fun registerBundle(variant: String, dev: Boolean, phoenix: Boolean = false): TaskProvider<DenoTask> {
+    val name = variant.replaceFirstChar(Char::uppercase) + if (phoenix) "Phoenix" else ""
+    val out = if (phoenix) "bundle/phoenix/$variant" else "bundle/$variant"
+
+    return tasks.register<DenoTask>("assemble${name}Bundle") {
+        group = "build"
+        description = if (phoenix) "Builds the $variant Phoenix bundle and its manifest."
+            else "Builds the $variant Hermes bundle and its manifest."
+        dependsOn(installDependencies)
+        denoVersion = pinnedDenoVersion
+        workDir = layout.projectDirectory
+        sources.from(bundleSources)
+        commit = bundleCommit
+        outputDir = layout.buildDirectory.dir(out)
+        arguments = listOf("run", "--permission-set=build") + cachedOnly +
+            listOf("scripts/build.ts", "--reproducible", "--out", "build/$out") +
+            (if (phoenix) listOf("--target", "phoenix") else emptyList()) +
+            (if (dev) listOf("--dev") else emptyList())
+    }
 }
 
 val assembleDebugBundle = registerBundle("debug", dev = true)
 val assembleReleaseBundle = registerBundle("release", dev = false)
+val assembleDebugPhoenixBundle = registerBundle("debug", dev = true, phoenix = true)
+val assembleReleasePhoenixBundle = registerBundle("release", dev = false, phoenix = true)
 
-// Both builds regenerate dist/assets/generated.
+// Both builds regenerate dist/assets/generated. The Phoenix target never touches it.
 assembleReleaseBundle { mustRunAfter(assembleDebugBundle) }
 
 val testBundle = tasks.register<DenoTask>("testBundle") {
@@ -112,13 +121,24 @@ val testBundle = tasks.register<DenoTask>("testBundle") {
     arguments = listOf("run", "test")
 }
 
-tasks.named("assemble") { dependsOn(assembleDebugBundle, assembleReleaseBundle) }
+tasks.named("assemble") {
+    dependsOn(
+        assembleDebugBundle,
+        assembleReleaseBundle,
+        assembleDebugPhoenixBundle,
+        assembleReleasePhoenixBundle,
+    )
+}
 tasks.named("check") { dependsOn(testBundle) }
 
 configurations.consumable("debugBundle")
 configurations.consumable("releaseBundle")
+configurations.consumable("debugPhoenixBundle")
+configurations.consumable("releasePhoenixBundle")
 
 artifacts {
     add("debugBundle", assembleDebugBundle.flatMap { it.outputDir }) { builtBy(assembleDebugBundle) }
     add("releaseBundle", assembleReleaseBundle.flatMap { it.outputDir }) { builtBy(assembleReleaseBundle) }
+    add("debugPhoenixBundle", assembleDebugPhoenixBundle.flatMap { it.outputDir }) { builtBy(assembleDebugPhoenixBundle) }
+    add("releasePhoenixBundle", assembleReleasePhoenixBundle.flatMap { it.outputDir }) { builtBy(assembleReleasePhoenixBundle) }
 }

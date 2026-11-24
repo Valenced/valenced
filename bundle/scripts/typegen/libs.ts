@@ -10,6 +10,7 @@ import jsonStorage from '../../lib/json-storage/package.json' with {
 }
 import modules from '../../lib/modules/package.json' with { type: 'json' }
 import patcher from '../../lib/patcher/package.json' with { type: 'json' }
+import phoenix from '../../lib/phoenix/package.json' with { type: 'json' }
 import plugins from '../../lib/plugins/package.json' with { type: 'json' }
 import react from '../../lib/react/package.json' with { type: 'json' }
 import utils from '../../lib/utils/package.json' with { type: 'json' }
@@ -113,6 +114,15 @@ export function getLibraries(): LibraryModule[] {
         library(patcher, [
             ['', 'patcher'],
             ['types', NoGlobal],
+        ]),
+        // Phoenix has standalone client APIs and a JS plugin lifecycle host.
+        library(phoenix, [
+            ['', NoGlobal],
+            ['bytes', NoGlobal],
+            ['gateway', NoGlobal],
+            ['plugins', NoGlobal],
+            ['types', NoGlobal],
+            ['ui', NoGlobal],
         ]),
         library(
             plugins,

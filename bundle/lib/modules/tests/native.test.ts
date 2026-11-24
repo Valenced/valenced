@@ -144,9 +144,9 @@ describe('registerJSMethod', () => {
         )
     })
 
-    test('throws for unknown methods', () => {
-        expect(() => callableModule!()['test.unknown']!()).toThrow(
-            'JS method not found: test.unknown',
-        )
+    test('returns an error to native for unknown methods', () => {
+        callableModule!()['test.unknown']!()
+
+        expect(returned()[0].error).toBe('JS method not found: test.unknown')
     })
 })

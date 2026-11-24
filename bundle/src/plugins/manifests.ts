@@ -2,7 +2,11 @@ import { registerInternalManifest } from '@valenced/plugins/_'
 import type { InternalPluginManifest } from '@valenced/plugins/_'
 
 const manifests = import.meta.glob<InternalPluginManifest>(
-    './*/*/manifest.json',
+    [
+        './preinit/*/manifest.json',
+        './init/*/manifest.json',
+        './start/*/manifest.json',
+    ],
     {
         eager: true,
         import: 'default',
