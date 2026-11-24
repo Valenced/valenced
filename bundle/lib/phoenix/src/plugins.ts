@@ -4,10 +4,11 @@ import {
     registerJSMethod,
 } from '@valenced/modules/native'
 import * as bytes from './bytes'
-import { evalCompatPlugin } from './compat'
 import * as gateway from './gateway'
+import * as http from './http'
 import * as phoenix from './index'
 import * as ui from './ui'
+import { createViews } from './views'
 import type { PhoenixPluginOptions, PhoenixPluginScope } from './types'
 
 interface NativePlugin {
@@ -35,7 +36,7 @@ const settingListeners = new Map<string, Set<(value: unknown) => void>>()
 const settingValues = new Map<string, Record<string, unknown>>()
 let runtimeSlotId: string | undefined
 
-const phoenixApi = { ...phoenix, ...gateway, ui, bytes }
+const phoenixApi = { ...phoenix, ...gateway, ui, bytes, http }
 
 /** Starts enabled plugins with a `dist.phoenix` artifact from the native registry. */
 export async function startExternalPhoenixPlugins() {
@@ -75,7 +76,8 @@ async function startPlugin(plugin: NativePlugin) {
     const id = plugin.manifest.id
     if (running.has(id) || !plugin.script) return
 
-    const cleanups: Array<() => unknown> = []
+    const views = createViews()
+    const cleanups: Array<() => unknown> = [views.dispose]
     const settings = callPluginSystem<Record<string, unknown>>(
         'valenced.plugins.settings.read',
         [id],
@@ -95,7 +97,7 @@ async function startPlugin(plugin: NativePlugin) {
             error: message =>
                 nativeLoggingHook(`[${id}] ${String(message)}`, 3),
         },
-        phoenix: phoenixApi,
+        phoenix: { ...phoenixApi, views },
         callNativeMethod: (name, args = []) =>
             callNativeMethodSync(name as never, args as never),
         settings: {
@@ -133,8 +135,10 @@ async function startPlugin(plugin: NativePlugin) {
     try {
         const module = plugin.compat
             ? {
-                  default: evalCompatPlugin(plugin.script, scope, () =>
-                      stopPlugin(id),
+                  default: (await import('./compat')).evalCompatPlugin(
+                      plugin.script,
+                      scope,
+                      () => stopPlugin(id),
                   ),
               }
             : (new Function(
@@ -143,8 +147,8 @@ async function startPlugin(plugin: NativePlugin) {
                   `return ${plugin.script}\n//# sourceURL=Valenced:PhoenixPlugin:${id}`,
               )(
                   {
-                      ...phoenixApi,
-                      phoenix: phoenixApi,
+                      ...scope.phoenix,
+                      phoenix: scope.phoenix,
                       callNativeMethod: scope.callNativeMethod,
                       callNativeMethodSync: scope.callNativeMethod,
                   },

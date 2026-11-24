@@ -122,6 +122,7 @@ export function getLibraries(): LibraryModule[] {
             ['plugins', NoGlobal],
             ['types', NoGlobal],
             ['ui', NoGlobal],
+            ['views', NoGlobal],
         ]),
         library(
             plugins,

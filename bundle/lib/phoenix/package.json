@@ -12,6 +12,9 @@
     "./gateway": {
       "default": "./src/gateway.ts"
     },
+    "./http": {
+      "default": "./src/http.ts"
+    },
     "./plugins": {
       "default": "./src/plugins.ts"
     },
@@ -20,6 +23,9 @@
     },
     "./ui": {
       "default": "./src/ui.ts"
+    },
+    "./views": {
+      "default": "./src/views.ts"
     }
   }
 }

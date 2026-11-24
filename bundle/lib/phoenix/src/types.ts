@@ -52,11 +52,13 @@ export interface PhoenixPluginScope {
         warn(message: unknown): void
         error(message: unknown): void
     }
-    /** The same frame and gateway API exported by `@valenced/phoenix`, with `ui` and `bytes` namespaces. */
+    /** The same frame and gateway API exported by `@valenced/phoenix`, with `ui`, `bytes`, `http` and `views` namespaces. */
     phoenix: typeof import('./index') &
         typeof import('./gateway') & {
             ui: typeof import('./ui')
             bytes: typeof import('./bytes')
+            http: typeof import('./http')
+            views: import('./views').Views
         }
     /** Synchronous native bridge for Phoenix host methods. */
     callNativeMethod(name: string, args?: unknown[]): unknown
