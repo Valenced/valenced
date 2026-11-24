@@ -4,6 +4,7 @@ import android.content.res.XModuleResources
 import app.valenced.xposed.ValencedConstants
 import app.valenced.xposed.phoenix.PhoenixRuntime
 import app.valenced.xposed.tweak
+import app.valenced.xposed.tweaks.DevLoader
 import app.valenced.xposed.tweaks.onLaunchDecision
 import java.io.File
 
@@ -14,7 +15,8 @@ val phoenixBundleLoader by tweak {
         if (!phoenix) return@onLaunchDecision
         if (!PhoenixRuntime.start(modulePath, appInfo)) return@onLaunchDecision
 
-        val override = File(appInfo.dataDir, "${ValencedConstants.FILES_DIR}/$DEV_BUNDLE")
+        val override = DevLoader.awaitPhoenixBundle()
+            ?: File(appInfo.dataDir, "${ValencedConstants.FILES_DIR}/$DEV_BUNDLE")
         val source = if (override.isFile && override.length() > 0) {
             log.i("Loading the development Phoenix bundle: ${override.path}")
             override.readBytes()
@@ -26,6 +28,9 @@ val phoenixBundleLoader by tweak {
 
         val error = PhoenixRuntime.evaluate(source, ValencedConstants.PHOENIX_BUNDLE_ASSET)
         if (error != null) log.e("The Phoenix bundle failed to evaluate: $error")
-        else log.i("Evaluated the Phoenix bundle, ${source.size} bytes")
+        else {
+            log.i("Evaluated the Phoenix bundle, ${source.size} bytes")
+            DevLoader.connectDevTools()
+        }
     }
 }

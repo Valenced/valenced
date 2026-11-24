@@ -48,7 +48,7 @@ Gradle builds the bundle into the loaders (`./gradlew :android:assembleDebug` fr
 
     ```js
     var HOST = "http://<address>:4040";
-    valenced.discord.native.FileModule.writeFile("documents", "valenced/loader.json", JSON.stringify({ customLoadUrl: { enabled: true, url: HOST + "/valenced.bundle", manifestUrl: HOST + "/manifest.json" } }), "utf8");
+    valenced.discord.native.FileModule.writeFile("documents", "valenced/loader.json", JSON.stringify({ customLoadUrl: { enabled: true, url: HOST + "/valenced.bundle", manifestUrl: HOST + "/manifest.json", phoenixUrl: HOST + "/valenced.phoenix.bundle" } }), "utf8");
     ```
 
 4. Restart Discord. To go back to the shipped bundle, use **Reset Loader Config** in the recovery options.

@@ -1,5 +1,6 @@
 // Sets __valencedPhoenixFrames before the host can read it
 import '@valenced/phoenix'
+import '@valenced/phoenix/devtools'
 import { callNativeMethod } from '@valenced/modules/native'
 import { startExternalPhoenixPlugins } from '@valenced/phoenix/plugins'
 import { getErrorStack } from '@valenced/utils/error'

@@ -11,10 +11,12 @@ import build from './build'
 
 const prod = process.argv.includes('--prod')
 const lanHost = process.argv.includes('--lan')
+const PortArg = process.argv.indexOf('--port')
 
-const Port = 4040
+const Port = PortArg === -1 ? 4040 : Number(process.argv[PortArg + 1])
 const BundlePath = './dist/valenced.bundle'
 const BundleManifestPath = './dist/manifest.json'
+const PhoenixBundlePath = './dist/phoenix/valenced.phoenix.bundle'
 
 console.info(chalk.redBright(`\nValenced ${chalk.white(`v${pkg.version}`)}\n`))
 
@@ -29,12 +31,15 @@ const Sources = [
 ].map(cwdify)
 const ExitTriggers = ['scripts'].map(cwdify)
 
-const debouncedBuild = debounce(
-    () => ((needRebuild = false), build(!prod)),
-    250,
-)
+const debouncedBuild = {
+    rn: debounce(() => ((needRebuild.rn = false), build(!prod)), 250),
+    phoenix: debounce(
+        () => ((needRebuild.phoenix = false), build(!prod, true, 'phoenix')),
+        250,
+    ),
+}
 
-let needRebuild = true
+const needRebuild = { rn: true, phoenix: true }
 
 watcher.subscribe(process.cwd(), (err, events) => {
     if (err) return console.error(err)
@@ -44,9 +49,8 @@ watcher.subscribe(process.cwd(), (err, events) => {
         process.exit()
     }
 
-    needRebuild ||= events.some(it =>
-        Sources.some(src => it.path.startsWith(src)),
-    )
+    if (events.some(it => Sources.some(src => it.path.startsWith(src))))
+        needRebuild.rn = needRebuild.phoenix = true
 })
 
 const server = createServer(async (req, res) => {
@@ -55,12 +59,17 @@ const server = createServer(async (req, res) => {
 
         let file: string
         let friendlyName: string
+        let target: 'rn' | 'phoenix' = 'rn'
         if (path === '/manifest.json') {
             file = BundleManifestPath
             friendlyName = 'manifest'
         } else if (path === '/valenced.bundle') {
             file = BundlePath
             friendlyName = 'bundle'
+        } else if (path === '/valenced.phoenix.bundle') {
+            file = PhoenixBundlePath
+            friendlyName = 'Phoenix bundle'
+            target = 'phoenix'
         } else {
             res.writeHead(404)
             res.end('Not found')
@@ -73,7 +82,7 @@ const server = createServer(async (req, res) => {
             ),
         )
 
-        if (needRebuild) await debouncedBuild()
+        if (needRebuild[target]) await debouncedBuild[target]()
 
         const contents = await readFile(file).catch(() => null)
         if (!contents)

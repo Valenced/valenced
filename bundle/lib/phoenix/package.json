@@ -9,6 +9,9 @@
     "./bytes": {
       "default": "./src/bytes.ts"
     },
+    "./devtools": {
+      "default": "./src/devtools.ts"
+    },
     "./gateway": {
       "default": "./src/gateway.ts"
     },

@@ -10,6 +10,10 @@ import java.io.File
 object DevLoader {
     fun awaitBundle(): File? = null
 
+    fun awaitPhoenixBundle(): File? = null
+
+    fun connectDevTools() {}
+
     fun readBundleManifest(): String? = null
 
     fun preloads(): List<File> = emptyList()
