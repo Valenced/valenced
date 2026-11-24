@@ -13,7 +13,6 @@ import kotlinx.serialization.json.longOrNull
 
 internal fun encodeJson(value: Any?): String = ValencedJson.encodeToString(JsonElement.serializer(), toJson(value))
 
-/** Reads a bridge payload into its method name and arguments, or null when it is not one. */
 internal fun decodeCall(payload: String): Pair<String, List<Any?>>? {
     val root = runCatching { ValencedJson.parseToJsonElement(payload) }.getOrNull() as? JsonObject ?: return null
     val call = root[ValencedBridgeRegistry.NATIVE_CALL_DATA_KEY] as? JsonObject ?: return null
@@ -25,7 +24,7 @@ internal fun decodeCall(payload: String): Pair<String, List<Any?>>? {
     return name to args.map(::fromJson)
 }
 
-private fun toJson(value: Any?): JsonElement = when (value) {
+internal fun toJson(value: Any?): JsonElement = when (value) {
     null, Unit -> JsonNull
     is JsonElement -> value
     is String -> JsonPrimitive(value)

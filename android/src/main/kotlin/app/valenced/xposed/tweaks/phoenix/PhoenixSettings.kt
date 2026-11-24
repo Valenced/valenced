@@ -36,6 +36,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.WindowManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
@@ -68,7 +69,8 @@ import app.valenced.xposed.api.registerNativeMethod
 import app.valenced.xposed.tweak
 import app.valenced.xposed.tweaks.bridge.ValencedBridgeRegistry
 import app.valenced.xposed.tweaks.phoenixLaunched
-import de.robv.android.xposed.XposedBridge
+import app.valenced.xposed.tweaks.readForce
+import app.valenced.xposed.tweaks.xposedFramework
 import java.io.File
 import java.lang.ref.WeakReference
 import kotlin.coroutines.resume
@@ -76,6 +78,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -156,14 +159,6 @@ private class PhoenixSettingsScreen(
     private val installedHere = mutableSetOf<String>()
     private val modes = listOf("follow" to "Follow Discord", "phoenix" to "Phoenix", "rn" to "React Native")
     private val modeFile = File(activity.filesDir, "valenced/phoenix_mode")
-    private val filterOptions = linkedMapOf(
-        "Enabled" to "CircleCheckIcon",
-        "Disabled" to "CircleXIcon",
-        "Has Errors" to "CircleErrorIcon",
-        "Pending Reload" to "RetryIcon",
-        "Configurable" to "SettingsIcon",
-        "Internal" to info?.get("icon") as? String,
-    )
     private val filters = mutableSetOf("Configurable")
     private var matchAll = true
     private var sortBy = "Name"
@@ -363,7 +358,14 @@ private class PhoenixSettingsScreen(
             LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) },
         )
         section("Filter by", icons = true, into = content) {
-            for ((label, icon) in filterOptions) {
+            for ((label, icon) in listOf(
+                "Enabled" to "CircleCheckIcon",
+                "Disabled" to "CircleXIcon",
+                "Has Errors" to "CircleErrorIcon",
+                "Pending Reload" to "RetryIcon",
+                "Configurable" to "SettingsIcon",
+                "Internal" to info?.get("icon") as? String,
+            )) {
                 val checked = label in filters
                 row(label, emptyList(), ImageView(ctx).apply {
                     scaleType = ImageView.ScaleType.CENTER
@@ -666,60 +668,107 @@ private class PhoenixSettingsScreen(
         }
     }
 
-    private fun showPluginSettings(plugin: Map<*, *>) = page(
-        "${(plugin["manifest"] as Map<*, *>)["name"]} Settings",
+    private fun showPluginSettings(plugin: Map<*, *>, parent: Map<*, *>? = null): Unit = page(
+        parent?.get("label") as? String ?: "${(plugin["manifest"] as Map<*, *>)["name"]} Settings",
     ) {
         val manifest = plugin["manifest"] as Map<*, *>
         val id = manifest["id"] as String
-        val declaredSettings = manifest["settings"] as? List<*>
+        val declaredSettings = parent?.get("settings") as? List<*> ?: manifest["settings"] as? List<*>
         val declared = declaredSettings != null
         val fields = declaredSettings?.map { it as Map<*, *> } ?: settingsFor(plugin)
-        val values = if (declared) call("valenced.plugins.settings.read", id) as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val stored = if (declared) call("valenced.plugins.settings.read", id) as? Map<*, *> ?: emptyMap<Any?, Any?>()
         else emptyMap<Any?, Any?>()
+        val values = (if (parent == null) stored else stored[parent["key"]] as? Map<*, *> ?: emptyMap<Any?, Any?>())
+            .toMutableMap()
+        val prefix = parent?.let { "${it["key"]}." }.orEmpty()
 
         render {
+            val rows = mutableListOf<Pair<Map<*, *>, View>>()
+            val update = {
+                for ((setting, view) in rows) (setting["showIf"] as? Map<*, *>)?.let { condition ->
+                    val current = values[condition["key"]]
+                    val expected = condition["equals"]
+                    view.visibility = if (current == expected ||
+                        current is Number && expected is Number && current.toDouble() == expected.toDouble()
+                    ) View.VISIBLE else View.GONE
+                }
+            }
             val groups = fields.groupBy { it["section"] as? String }
             for ((sectionName, settings) in groups) {
                 section(sectionName) {
                     for (setting in settings) {
                         val key = setting["key"] as String
+                        val path = prefix + key
                         val type = setting["type"] as String
                         val label = setting["label"] as String
                         val description = setting["description"] as? String
                         val value = values[key] ?: setting["value"] ?: setting["default"]
-                        when (type) {
+                        rows += setting to when (type) {
                             "switch" -> row(label, listOfNotNull(description), toggle(value == true) { next ->
                                 action {
-                                    writeSetting(id, key, next, declared)
+                                    writeSetting(id, path, next, declared)
                                     refresh()
                                 }
                             })
                             "select" -> row(label, listOfNotNull(description, (setting["options"] as? List<*>)
                                 ?.firstOrNull { (it as Map<*, *>)["value"] == value }
                                 ?.let { (it as Map<*, *>)["label"] as? String }), icon = "ArrowSmallRightIcon") {
-                                open { showSelectSetting(plugin, setting, declared, value) }
+                                open { showSelectSetting(plugin, setting, path, declared, value) }
+                            }
+                            "color" -> row(label, listOfNotNull(description, value as? String), View(ctx).apply {
+                                background = shape(
+                                    runCatching { Color.parseColor(value as String) }.getOrDefault(Color.TRANSPARENT),
+                                    8,
+                                ).apply { setStroke(dp(1), outline) }
+                                layoutParams = ViewGroup.LayoutParams(dp(28), dp(28))
+                            }) { showColorPicker(id, setting, path, value as? String ?: "") }
+                            "list" -> row(
+                                label,
+                                listOfNotNull(description, (value as? List<*>)?.takeIf { it.isNotEmpty() }?.joinToString(", ")),
+                                chevron(),
+                            ) { open { showListSetting(plugin, setting, path) } }
+                            "object" -> row(label, listOfNotNull(description), chevron()) {
+                                open { showPluginSettings(plugin, setting) }
                             }
                             else -> {
+                                val error = text("", danger, 12f).apply { visibility = View.GONE }
+                                var pending: Job? = null
                                 val editor = input(label).apply {
                                     setText(value?.toString().orEmpty())
                                     if (type == "number") setInputType(
                                         InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or
                                                 InputType.TYPE_NUMBER_FLAG_SIGNED,
                                     )
-                                    setOnFocusChangeListener { _, focused ->
-                                        if (!focused) saveInputSetting(id, key, type, text.toString(), declared)
+                                    doAfterTextChanged {
+                                        val (next, problem) = parse(setting, type, it.toString())
+                                        error.text = problem
+                                        error.visibility = if (problem == null) View.GONE else View.VISIBLE
+                                        background = shape(field, 8).apply { setStroke(dp(1), if (problem == null) outline else danger) }
+                                        pending?.cancel()
+                                        if (problem != null) return@doAfterTextChanged
+                                        values[key] = next
+                                        update()
+                                        pending = scope.launch {
+                                            delay(300)
+                                            action { writeSetting(id, path, next, declared) }
+                                        }
                                     }
                                 }
-                                row(label, listOfNotNull(description), editor)
+                                row(label, listOfNotNull(description), LinearLayout(ctx).apply {
+                                    orientation = LinearLayout.VERTICAL
+                                    addView(editor, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+                                    addView(error, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(4) })
+                                })
                             }
                         }
                     }
                 }
             }
+            update()
         }
     }
 
-    private fun showSelectSetting(plugin: Map<*, *>, setting: Map<*, *>, declared: Boolean, selected: Any?) = page(
+    private fun showSelectSetting(plugin: Map<*, *>, setting: Map<*, *>, path: String, declared: Boolean, selected: Any?) = page(
         setting["label"] as String,
     ) {
         val id = (plugin["manifest"] as Map<*, *>)["id"] as String
@@ -730,12 +779,213 @@ private class PhoenixSettingsScreen(
                     val value = option["value"]
                     row(option["label"] as String, emptyList(), radio(value == selected), onClick = {
                         action {
-                            writeSetting(id, setting["key"] as String, value, declared)
+                            writeSetting(id, path, value, declared)
                             back()
                         }
                     })
                 }
             }
+        }
+    }
+
+    private fun showListSetting(plugin: Map<*, *>, setting: Map<*, *>, path: String) = page(setting["label"] as String) {
+        val id = (plugin["manifest"] as Map<*, *>)["id"] as String
+        val type = setting["item"] as? String ?: "text"
+        val max = (setting["maxItems"] as? Number)?.toInt()
+        val items = path.split(".").fold<String, Any?>(call("valenced.plugins.settings.read", id)) { node, key ->
+            (node as? Map<*, *>)?.get(key)
+        } as? List<*> ?: emptyList<Any?>()
+        val edit = { at: Int? ->
+            val (sheet, content) = overlay(true)
+            val error = text("", danger, 12f).apply { visibility = View.GONE }
+            val editor = input("")
+            val save = button("Save") {
+                val (next, problem) = parse(setting, type, editor.text.toString())
+                if (problem == null) action {
+                    writeSetting(id, path, items.toMutableList().apply { if (at == null) add(next) else set(at, next) }, true)
+                    sheet.dismiss()
+                    refresh()
+                }
+            }
+            editor.apply {
+                if (type == "number") setInputType(
+                    InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED,
+                )
+                doAfterTextChanged {
+                    val problem = parse(setting, type, it.toString()).second
+                    error.text = problem
+                    error.visibility = if (problem == null) View.GONE else View.VISIBLE
+                    background = shape(field, 8).apply { setStroke(dp(1), if (problem == null) outline else danger) }
+                    save.isEnabled = problem == null
+                    save.alpha = if (problem == null) 1f else 0.5f
+                }
+                setText(at?.let { "${items[it]}" }.orEmpty())
+                requestFocus()
+            }
+            content.addView(
+                text(setting["label"] as String, primary, 18f, semibold).apply { gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) },
+            )
+            content.addView(editor)
+            content.addView(error, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(4) })
+            content.addView(save, LinearLayout.LayoutParams(MATCH_PARENT, dp(40)).apply { topMargin = dp(16) })
+            sheet.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+            sheet.show()
+        }
+
+        render {
+            section(null) {
+                items.forEachIndexed { at, item ->
+                    row("$item", emptyList(), iconButton("TrashIcon", "Remove", danger) {
+                        action {
+                            writeSetting(id, path, items.filterIndexed { index, _ -> index != at }, true)
+                            refresh()
+                        }
+                    }) { edit(at) }
+                }
+                if (max == null || items.size < max)
+                    row("Add", listOfNotNull(max?.let { "${items.size}/$it" }), icon = "PlusLargeIcon") { edit(null) }
+            }
+        }
+    }
+
+    private fun showColorPicker(id: String, setting: Map<*, *>, path: String, value: String) {
+        val (sheet, content) = overlay(true)
+        val black = resource("black", 0xFF000000)
+        val hsv = FloatArray(3)
+        val initial = runCatching { Color.parseColor(value) }.getOrDefault(brand)
+        var alpha = Color.alpha(initial)
+        var syncing = false
+        Color.colorToHSV(initial, hsv)
+
+        val tint = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(white, white)).apply {
+            cornerRadius = dp(8).toFloat()
+        }
+        val thumbs = List(2) {
+            View(ctx).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setStroke(dp(3), white)
+                }
+                elevation = dp(2).toFloat()
+            }
+        }
+        val plane = FrameLayout(ctx).apply {
+            background = tint
+            addView(View(ctx).apply {
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(ColorUtils.setAlphaComponent(black, 0), black),
+                ).apply { cornerRadius = dp(8).toFloat() }
+            }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            addView(thumbs[0], FrameLayout.LayoutParams(dp(24), dp(24)))
+        }
+        val spectrum = FrameLayout(ctx).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                IntArray(7) { Color.HSVToColor(floatArrayOf(it * 60f, 1f, 1f)) },
+            ).apply { cornerRadius = dp(14).toFloat() }
+            addView(thumbs[1], FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER_VERTICAL))
+        }
+        val preview = View(ctx)
+        val hex = input("").apply {
+            setText(value)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        val error = text("Invalid color", danger, 12f).apply { visibility = View.GONE }
+        val update = { typed: Boolean ->
+            val color = Color.HSVToColor(alpha, hsv)
+            tint.colors = intArrayOf(white, Color.HSVToColor(floatArrayOf(hsv[0], 1f, 1f)))
+            thumbs[0].translationX = hsv[1] * (plane.width - dp(24))
+            thumbs[0].translationY = (1 - hsv[2]) * (plane.height - dp(24))
+            thumbs[1].translationX = hsv[0] / 360f * (spectrum.width - dp(24))
+            (thumbs[0].background as GradientDrawable).setColor(ColorUtils.setAlphaComponent(color, 0xFF))
+            (thumbs[1].background as GradientDrawable).setColor(Color.HSVToColor(floatArrayOf(hsv[0], 1f, 1f)))
+            preview.background = shape(color, 8).apply { setStroke(dp(1), outline) }
+            if (!typed) {
+                syncing = true
+                hex.setText(if (alpha == 0xFF) "#%06X".format(color and 0xFFFFFF) else "#%08X".format(color))
+                syncing = false
+            }
+        }
+        val save = button("Save") {
+            val digits = hex.text.toString().trim().removePrefix("#").uppercase()
+            action {
+                writeSetting(id, path, "#$digits", true)
+                sheet.dismiss()
+                refresh()
+            }
+        }
+        hex.doAfterTextChanged {
+            if (syncing) return@doAfterTextChanged
+            val digits = it.toString().trim().removePrefix("#")
+            val valid = digits.length in setOf(6, 8) && digits.all { char -> char.isDigit() || char.lowercaseChar() in 'a'..'f' }
+            error.visibility = if (valid) View.GONE else View.VISIBLE
+            hex.background = shape(field, 8).apply { setStroke(dp(1), if (valid) outline else danger) }
+            save.isEnabled = valid
+            save.alpha = if (valid) 1f else 0.5f
+            if (!valid) return@doAfterTextChanged
+            val color = Color.parseColor("#$digits")
+            alpha = Color.alpha(color)
+            Color.colorToHSV(color, hsv)
+            update(true)
+        }
+        plane.setOnTouchListener { view, event ->
+            view.parent.requestDisallowInterceptTouchEvent(true)
+            hsv[1] = (event.x / view.width).coerceIn(0f, 1f)
+            hsv[2] = 1 - (event.y / view.height).coerceIn(0f, 1f)
+            update(false)
+            true
+        }
+        spectrum.setOnTouchListener { view, event ->
+            view.parent.requestDisallowInterceptTouchEvent(true)
+            hsv[0] = (event.x / view.width).coerceIn(0f, 1f) * 359.9f
+            update(false)
+            true
+        }
+        plane.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> update(true) }
+        spectrum.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> update(true) }
+
+        content.addView(
+            text(setting["label"] as String, primary, 18f, semibold).apply { gravity = Gravity.CENTER },
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) },
+        )
+        content.addView(plane, LinearLayout.LayoutParams(MATCH_PARENT, dp(180)))
+        content.addView(spectrum, LinearLayout.LayoutParams(MATCH_PARENT, dp(28)).apply { topMargin = dp(16) })
+        content.addView(LinearLayout(ctx).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(preview, LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) })
+            addView(hex, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) })
+        content.addView(error, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+            topMargin = dp(4)
+            marginStart = dp(52)
+        })
+        content.addView(save, LinearLayout.LayoutParams(MATCH_PARENT, dp(40)).apply { topMargin = dp(16) })
+        sheet.show()
+    }
+
+    private fun parse(setting: Map<*, *>, type: String, raw: String): Pair<Any?, String?> {
+        if (type != "number") {
+            val min = (setting["minLength"] as? Number)?.toInt()
+            val max = (setting["maxLength"] as? Number)?.toInt()
+            val pattern = setting["pattern"] as? String
+            return raw to when {
+                min != null && raw.length < min -> "Must be at least $min ${if (min == 1) "character" else "characters"}"
+                max != null && raw.length > max -> "Must be at most $max ${if (max == 1) "character" else "characters"}"
+                pattern != null && !Regex(pattern).containsMatchIn(raw) -> "Invalid format"
+                else -> null
+            }
+        }
+        val number = raw.toDoubleOrNull()?.takeIf { it.isFinite() } ?: return null to "Must be a number"
+        val integer = setting["integer"] == true
+        val min = setting["min"] as? Number
+        val max = setting["max"] as? Number
+        return (if (number % 1.0 == 0.0) number.toLong() else number) to when {
+            integer && number % 1.0 != 0.0 -> "Must be a whole number"
+            min != null && number < min.toDouble() -> "Must be at least ${"$min".removeSuffix(".0")}"
+            max != null && number > max.toDouble() -> "Must be at most ${"$max".removeSuffix(".0")}"
+            else -> null
         }
     }
 
@@ -781,11 +1031,6 @@ private class PhoenixSettingsScreen(
         file.writeText(storage.toString())
     }
 
-    private fun saveInputSetting(pluginId: String, key: String, type: String, raw: String, declared: Boolean) {
-        val value = if (type == "number") raw.toDoubleOrNull()?.takeIf { it.isFinite() } ?: return else raw
-        action { writeSetting(pluginId, key, value, declared) }
-    }
-
     private suspend fun pluginStorageFile(pluginId: String): File {
         val constants = call("valenced.plugins.getConstants") as Map<*, *>
         return File(File(constants["storageRootPath"] as String, pluginId), "storage.json")
@@ -802,22 +1047,8 @@ private class PhoenixSettingsScreen(
                         "SendMessageIcon",
                     ),
                     Triple("Client", if (phoenixLaunched == true) "Phoenix" else "React Native", "MobilePhoneIcon"),
-                    Triple(
-                        "Framework",
-                        runCatching {
-                            val config = XposedBridge::class.java.classLoader!!
-                                .loadClass("org.lsposed.lspatch.share.LSPConfig")
-                            "LSPatch ${config.getField("VERSION_NAME").get(config.getField("instance").get(null))}"
-                        }.recoverCatching {
-                            (XposedBridge::class.java.getField("TAG").get(null) as String).removeSuffix("-Bridge")
-                        }.getOrDefault("Xposed") + " (API ${XposedBridge.getXposedVersion()})",
-                        "WrenchIcon",
-                    ),
-                )) row(name, listOfNotNull(value), icon = icon) {
-                    (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                        .setPrimaryClip(ClipData.newPlainText(name, value))
-                    Toast.makeText(ctx, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                }
+                    Triple("Framework", xposedFramework, "WrenchIcon"),
+                )) row(name, listOfNotNull(value), icon = icon) { copy(name, value) }
                 for ((name, url, icon) in listOf(
                     Triple("Discord Server", info?.get("discord") as? String, "ClydeIcon"),
                     Triple("Source Code", info?.get("source") as? String, "PaperIcon"),
@@ -1405,15 +1636,16 @@ private class PhoenixSettingsScreen(
         }
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
             val side = if (bottom) 0 else dp(16)
             view.setPadding(
                 bars.left + side,
                 bars.top + dp(if (bottom) 56 else 16),
                 bars.right + side,
-                if (bottom) 0 else bars.bottom + dp(16),
+                if (bottom) keyboard else maxOf(bars.bottom, keyboard) + dp(16),
             )
             val inner = dp(if (bottom) 16 else 24)
-            content.setPadding(inner, inner, inner, inner + if (bottom) bars.bottom else 0)
+            content.setPadding(inner, inner, inner, inner + if (bottom && keyboard == 0) bars.bottom else 0)
             WindowInsetsCompat.CONSUMED
         }
 
@@ -1600,7 +1832,7 @@ private class PhoenixSettingsScreen(
         layoutParams = ViewGroup.LayoutParams(dp(24), dp(24))
     }
 
-    private fun copy(label: String, value: String) {
+    private fun copy(label: String, value: String?) {
         (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
             .setPrimaryClip(ClipData.newPlainText(label, value))
         Toast.makeText(ctx, "Copied to clipboard", Toast.LENGTH_SHORT).show()
@@ -1723,9 +1955,9 @@ private class PhoenixSettingsScreen(
         icon: String? = null,
         tint: Int = primary,
         onClick: (() -> Unit)? = null,
-    ) {
+    ): View {
         val image = icon(icon, tint)
-        group!!.addView(LinearLayout(ctx).apply {
+        return LinearLayout(ctx).apply {
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(56)
             setPadding(dp(if (image != null) 12 else 16), dp(12), dp(12), dp(12))
@@ -1753,7 +1985,7 @@ private class PhoenixSettingsScreen(
                 LinearLayout.LayoutParams(view.layoutParams ?: ViewGroup.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
                     .apply { marginStart = dp(16) },
             )
-        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        }.also { group!!.addView(it, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)) }
     }
 
     private fun radio(selected: Boolean) = FrameLayout(ctx).apply {
@@ -1865,8 +2097,8 @@ private class PhoenixSettingsScreen(
         ?.let { ctx.getDrawable(it)?.mutate()?.apply { setTint(tint) } }
 
     private fun currentMode(): Int {
-        val mode = modeFile.takeIf { it.exists() }?.readText()?.trim()?.lowercase()
-        return modes.indexOfFirst { it.first == mode }.coerceAtLeast(0)
+        val mode = readForce(activity.applicationInfo.dataDir).name.lowercase()
+        return modes.indexOfFirst { it.first == mode }
     }
 
     private fun resource(name: String, fallback: Long) =

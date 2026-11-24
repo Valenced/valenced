@@ -25,9 +25,20 @@ export function createPluginSettingsApi(
                 'valenced.plugins.settings.read',
                 [pluginId],
             )
-            if (!(key in values))
-                throw new Error(`Unknown setting "${key}" for "${pluginId}"`)
-            return values[key] as T
+            let value: unknown = values
+            for (const part of key.split('.')) {
+                if (
+                    !value ||
+                    typeof value !== 'object' ||
+                    Array.isArray(value) ||
+                    !(part in value)
+                )
+                    throw new Error(
+                        `Unknown setting "${key}" for "${pluginId}"`,
+                    )
+                value = (value as Record<string, unknown>)[part]
+            }
+            return value as T
         },
         async set(key, value) {
             await callPluginSystemMethod('valenced.plugins.settings.write', [

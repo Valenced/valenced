@@ -12,11 +12,14 @@ import app.valenced.plugins.PluginSettings
 import app.valenced.plugins.PluginSettingsStore
 import app.valenced.plugins.PluginStatesStore
 import app.valenced.plugins.PluginSystemError
+import app.valenced.plugins.findSetting
 import app.valenced.plugins.pluginLog
+import app.valenced.plugins.settingAt
 import app.valenced.xposed.ScopedDexFinder
 import app.valenced.xposed.api.DexFinder
 import app.valenced.xposed.api.HostScope
 import app.valenced.xposed.api.callJSMethod
+import app.valenced.xposed.phoenix.toJson
 import app.valenced.xposed.runSuspendCatching
 import app.valenced.xposed.tweaks.plugins.internal.InternalPluginFlags
 import java.io.File
@@ -25,7 +28,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
 
 private inline val loaded get() = pluginRegistry.loaded
 
@@ -67,31 +69,25 @@ internal class PluginScopeImpl(
         override fun get(key: String): Any? = settingValue(key).toNative()
 
         override fun set(key: String, value: Any?) {
-            val json = settingJson(value)
-            PluginSettingsStore.write(pluginPaths(appInfo.dataDir), manifest.id, manifest.settings.orEmpty(), key, json)
-            val updated = settingValue(key).toNative()
-            pluginSettingsEvents.emit(manifest.id, key, updated)
-            pluginJobScope.launch {
-                callJSMethod("valenced.plugins.settings.update", listOf(manifest.id, key, updated))
+            PluginSettingsStore.write(pluginPaths(appInfo.dataDir), manifest.id, manifest.settings.orEmpty(), key, toJson(value))
+            for (path in setOf(key.substringBefore('.'), key)) {
+                val updated = settingValue(path).toNative()
+                pluginSettingsEvents.emit(manifest.id, path, updated)
+                pluginJobScope.launch {
+                    callJSMethod("valenced.plugins.settings.update", listOf(manifest.id, path, updated))
+                }
             }
         }
 
         override fun subscribe(key: String, listener: (Any?) -> Unit): AutoCloseable {
-            manifest.settings.orEmpty().firstOrNull { it.key == key }
+            manifest.settings.orEmpty().findSetting(key)
                 ?: throw IllegalArgumentException("Unknown setting '$key' for '${manifest.id}'")
             return pluginSettingsEvents.subscribe(manifest.id, key, listener)
         }
 
         private fun settingValue(key: String): JsonElement =
-            PluginSettingsStore.read(pluginPaths(appInfo.dataDir), manifest.id, manifest.settings.orEmpty())[key]
+            PluginSettingsStore.read(pluginPaths(appInfo.dataDir), manifest.id, manifest.settings.orEmpty()).settingAt(key)
                 ?: throw IllegalArgumentException("Unknown setting '$key' for '${manifest.id}'")
-
-        private fun settingJson(value: Any?): JsonElement = when (value) {
-            is String -> JsonPrimitive(value)
-            is Boolean -> JsonPrimitive(value)
-            is Number -> JsonPrimitive(value)
-            else -> throw IllegalArgumentException("Setting values must be strings, numbers, or booleans")
-        }
     }
 
     // Arbitrary limit of 1000 errors, should be enough in most cases

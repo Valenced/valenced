@@ -95,12 +95,8 @@ async function startPlugin(plugin: NativePlugin) {
         callNativeMethod: (name, args = []) =>
             callNativeMethodSync(name as never, args as never),
         settings: {
-            get: <T = unknown>(key: string): T => {
-                const values = settingValues.get(id) ?? settings
-                if (!(key in values))
-                    throw new Error(`Unknown plugin setting: ${key}`)
-                return values[key] as T
-            },
+            get: <T = unknown>(key: string): T =>
+                settingAt(settingValues.get(id) ?? settings, key) as T,
             set: async (key, value) => {
                 const response = (await callNativeMethod(
                     'valenced.plugins.settings.write' as never,
@@ -109,8 +105,7 @@ async function startPlugin(plugin: NativePlugin) {
                 if (response.error) throw new Error(response.error.message)
             },
             subscribe: (key, listener) => {
-                if (!(key in settings))
-                    throw new Error(`Unknown plugin setting: ${key}`)
+                settingAt(settings, key)
                 const eventKey = `${id}\0${key}`
                 let listeners = settingListeners.get(eventKey)
                 if (!listeners)
@@ -207,9 +202,24 @@ async function onStateUpdate(
     return null
 }
 
+function settingAt(values: Record<string, unknown>, key: string) {
+    let value: unknown = values
+    for (const part of key.split('.')) {
+        if (
+            !value ||
+            typeof value !== 'object' ||
+            Array.isArray(value) ||
+            !(part in value)
+        )
+            throw new Error(`Unknown plugin setting: ${key}`)
+        value = (value as Record<string, unknown>)[part]
+    }
+    return value
+}
+
 function onSettingUpdate(id: string, key: string, value: unknown) {
     const values = settingValues.get(id)
-    if (values) values[key] = value
+    if (values && !key.includes('.')) values[key] = value
     for (const listener of settingListeners.get(`${id}\0${key}`) ?? []) {
         try {
             listener(value)

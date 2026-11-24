@@ -102,7 +102,16 @@ export type PluginApiDecorator<
         keyof PluginApiInLifecycleMap<O> = keyof PluginApiInLifecycleMap<O>,
 > = (plugin: Plugin<O, S>, options: O) => void
 
-export type PluginSettingValue = boolean | number | string
+export type PluginSettingItemValue =
+    | boolean
+    | number
+    | string
+    | string[]
+    | number[]
+
+export type PluginSettingValue =
+    | PluginSettingItemValue
+    | Record<string, PluginSettingItemValue>
 
 export interface PluginValueSettingsApi {
     get<T extends PluginSettingValue = PluginSettingValue>(key: string): T
@@ -170,23 +179,44 @@ export interface PluginManifest {
     version: PluginVersion
 }
 
-export type PluginSettingType = 'switch' | 'text' | 'number' | 'select'
+export type PluginSettingType =
+    | 'switch'
+    | 'text'
+    | 'number'
+    | 'select'
+    | 'color'
+    | 'list'
+    | 'object'
 
 export interface PluginSettingOption {
     value: string
     label: string
 }
 
+export interface PluginSettingCondition {
+    key: string
+    equals: PluginSettingValue
+}
+
 export interface PluginSettingDefinition {
     key: string
     type: PluginSettingType
     label: string
-    default: boolean | number | string
+    /** Absent for `object`, which takes its value from `settings`. */
+    default?: PluginSettingItemValue
     description?: string
     section?: string
     min?: number
     max?: number
     options?: PluginSettingOption[]
+    showIf?: PluginSettingCondition
+    minLength?: number
+    maxLength?: number
+    pattern?: string
+    integer?: boolean
+    item?: 'text' | 'number'
+    maxItems?: number
+    settings?: PluginSettingDefinition[]
 }
 
 export interface PluginVersion {

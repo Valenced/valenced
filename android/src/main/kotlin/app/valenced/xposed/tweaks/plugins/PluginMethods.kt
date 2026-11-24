@@ -10,16 +10,17 @@ import app.valenced.plugins.PluginStatesStore
 import app.valenced.plugins.PluginSystemError
 import app.valenced.plugins.external.requireValidPluginId
 import app.valenced.plugins.pluginLog
+import app.valenced.plugins.settingAt
 import app.valenced.plugins.repos.SourcesStore
 import app.valenced.plugins.toJSPayload
 import app.valenced.xposed.tweak
 import app.valenced.xposed.api.callJSMethod
+import app.valenced.xposed.phoenix.toJson
 import app.valenced.xposed.tweaks.plugins.internal.InternalPluginFlags
 import app.valenced.xposed.tweaks.plugins.internal.internalPluginOf
 import java.io.File
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.JsonPrimitive
 
 val pluginMethods by tweak {
     pluginSystemMethod("valenced.plugins.getConstants") {
@@ -58,19 +59,17 @@ val pluginMethods by tweak {
             ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a plugin ID")
         val key = args.getOrNull(1) as? String
             ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a setting key")
-        val value = when (val raw = args.getOrNull(2)) {
-            is String -> JsonPrimitive(raw)
-            is Boolean -> JsonPrimitive(raw)
-            is Number -> JsonPrimitive(raw)
-            else -> throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a string, number, or boolean value")
-        }
+        val value = toJson(args.getOrNull(2))
         val factory = pluginRegistry.factories[pluginId]
             ?: throw PluginSystemError(PluginErrorCodes.NOT_FOUND, "Unknown plugin: '$pluginId'")
         val paths = pluginPaths(appInfo.dataDir)
         PluginSettingsStore.write(paths, pluginId, factory.manifest.settings.orEmpty(), key, value)
-        val updated = PluginSettingsStore.read(paths, pluginId, factory.manifest.settings.orEmpty()).getValue(key).toNative()
-        pluginSettingsEvents.emit(pluginId, key, updated)
-        callJSMethod("valenced.plugins.settings.update", listOf(pluginId, key, updated))
+        val values = PluginSettingsStore.read(paths, pluginId, factory.manifest.settings.orEmpty())
+        for (path in setOf(key.substringBefore('.'), key)) {
+            val updated = values.settingAt(path)?.toNative()
+            pluginSettingsEvents.emit(pluginId, path, updated)
+            callJSMethod("valenced.plugins.settings.update", listOf(pluginId, path, updated))
+        }
         null
     }
 
@@ -79,11 +78,14 @@ val pluginMethods by tweak {
             ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a plugin ID")
         val factory = pluginRegistry.factories[pluginId]
             ?: throw PluginSystemError(PluginErrorCodes.NOT_FOUND, "Unknown plugin: '$pluginId'")
-        PluginSettingsStore.delete(pluginPaths(appInfo.dataDir), pluginId)
+        PluginSettingsStore.clear(pluginPaths(appInfo.dataDir), pluginId, factory.manifest.settings.orEmpty())
         for (setting in factory.manifest.settings.orEmpty()) {
-            val value = setting.default.toNative()
-            pluginSettingsEvents.emit(pluginId, setting.key, value)
-            callJSMethod("valenced.plugins.settings.update", listOf(pluginId, setting.key, value))
+            val defaults = listOf(setting.key to setting.defaultValue) + setting.settings.map { "${setting.key}.${it.key}" to it.default }
+            for ((key, default) in defaults) {
+                val value = default.toNative()
+                pluginSettingsEvents.emit(pluginId, key, value)
+                callJSMethod("valenced.plugins.settings.update", listOf(pluginId, key, value))
+            }
         }
         null
     }

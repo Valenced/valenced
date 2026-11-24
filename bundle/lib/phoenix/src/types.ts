@@ -59,7 +59,10 @@ export interface PhoenixPluginScope {
     /** Persistent settings declared by this plugin's manifest. */
     settings: {
         get<T = unknown>(key: string): T
-        set(key: string, value: string | number | boolean): Promise<void>
+        set(
+            key: string,
+            value: string | number | boolean | string[] | number[],
+        ): Promise<void>
         subscribe(key: string, listener: (value: unknown) => void): () => void
     }
     /** Basic plugin identity and error reporting. */
