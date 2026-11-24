@@ -2,10 +2,14 @@ package app.valenced.xposed.tweaks.plugins
 
 import app.valenced.plugins.*
 import app.valenced.plugins.external.DiscoveryFailure
+import app.valenced.plugins.external.ExternalPluginClient
 import app.valenced.plugins.repos.PluginSource
 import app.valenced.xposed.tweaks.plugins.external.forgetNativePluginLoader
 import app.valenced.xposed.tweaks.plugins.external.nativePluginLoaders
 import app.valenced.xposed.tweaks.plugins.internal.InternalPluginFlags
+
+@Volatile
+internal var pluginClient = ExternalPluginClient.REACT_NATIVE
 
 /** [PluginManifest] + [load] method to get [PluginBuilder] + internal flags for registration. */
 internal class PluginFactory(

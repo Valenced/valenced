@@ -2,16 +2,29 @@ package app.valenced.xposed.tweaks.plugins
 
 import app.valenced.plugins.PluginErrorCodes
 import app.valenced.plugins.PluginStatesStore
+import app.valenced.plugins.external.ExternalPluginClient
 import app.valenced.plugins.external.MANIFEST_FILE
 import app.valenced.plugins.pluginLog
 import app.valenced.plugins.repos.SourcesStore
 import app.valenced.plugins.toPluginError
+import app.valenced.xposed.Tweak
 import app.valenced.xposed.tweak
+import app.valenced.xposed.tweaks.onLaunchDecision
 import app.valenced.xposed.tweaks.plugins.external.discoverExternalPlugins
 import app.valenced.xposed.tweaks.plugins.internal.*
 import java.io.File
 
 val pluginLoader by tweak {
+    // The launch choice is made after all tweaks register. Resolve client-specific distributions
+    // only once PhoenixLaunch has reported the client that will actually start.
+    val host = this
+    onLaunchDecision { phoenix ->
+        pluginClient = if (phoenix) ExternalPluginClient.PHOENIX else ExternalPluginClient.REACT_NATIVE
+        host.loadPlugins(pluginClient)
+    }
+}
+
+private fun Tweak.loadPlugins(client: ExternalPluginClient) {
     val errors = mutableListOf<String>()
 
     // Load states before anything reads or writes a slot.
@@ -34,7 +47,11 @@ val pluginLoader by tweak {
 
     val known = allInternalPlugins.filterNot { it.manifest.id in shadowed }
 
-    val discovery = discoverExternalPlugins(appInfo.dataDir, known.associate { it.manifest.id to it.manifest })
+    val discovery = discoverExternalPlugins(
+        appInfo.dataDir,
+        known.associate { it.manifest.id to it.manifest },
+        client,
+    )
     val external = discovery.factories
 
     pluginRegistry.recordDiscoveryFailures(discovery.failures)

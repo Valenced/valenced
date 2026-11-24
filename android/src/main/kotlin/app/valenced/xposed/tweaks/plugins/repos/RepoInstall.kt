@@ -73,7 +73,7 @@ internal suspend fun executeInstallPlan(
     val effectiveManifests = knownManifests + applied.associate { it.action.id to it.manifest.toPluginManifest() }
     return InstallPlanResult(
         fresh = applied.filterNot { it.deferred }
-            .map { readParsedPlugin(parseExternalPluginDir(it.dir.toFile()), effectiveManifests) },
+            .map { readParsedPlugin(parseExternalPluginDir(it.dir.toFile()), effectiveManifests, pluginClient) },
         pending = applied.filter { it.deferred }.map { it.action },
     )
 }

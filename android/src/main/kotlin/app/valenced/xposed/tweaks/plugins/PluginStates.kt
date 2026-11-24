@@ -38,6 +38,16 @@ val pluginStates by tweak {
         }
     }
 
+    /** `states.getRuntime(): { id, plugins }` for a client host starting JS plugins. */
+    pluginSystemMethod("valenced.plugins.states.getRuntime") {
+        PluginStatesStore.ensureLoaded(paths)
+        val slot = PluginStatesStore.boot
+        mapOf(
+            "id" to slot.id,
+            "plugins" to slot.snapshot().mapValues { (_, flags) -> flags.toJSPayload() },
+        )
+    }
+
     /**
      * `states.setActiveSlot(slot, oneShot?)`
      *

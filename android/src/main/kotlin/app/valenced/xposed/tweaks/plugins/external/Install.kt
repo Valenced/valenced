@@ -156,7 +156,7 @@ internal fun confirmPluginInstall(
     return if (isUpdate(staged.manifest.id)) {
         InstallResult.Updated(staged.manifest, Version.parse(staged.manifest.version))
     } else {
-        InstallResult.New(readExternalPluginDir(dir.toFile(), knownManifests))
+        InstallResult.New(readExternalPluginDir(dir.toFile(), knownManifests, pluginClient))
     }
 }
 

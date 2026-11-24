@@ -4,6 +4,7 @@ import app.valenced.plugins.PluginDependencyGraph
 import app.valenced.plugins.PluginManifest
 import app.valenced.plugins.PluginSystemError
 import app.valenced.plugins.external.ExternalManifest
+import app.valenced.plugins.external.ExternalPluginClient
 import app.valenced.plugins.external.MANIFEST_FILE
 import app.valenced.plugins.external.validate
 import app.valenced.plugins.plugin
@@ -28,13 +29,17 @@ internal fun parseExternalPluginDir(dir: File): ParsedExternalPlugin = ParsedExt
  *
  * @param knownManifests Every plugin installed, used to resolve this plugin's dependencies.
  */
-internal fun readExternalPluginDir(dir: File, knownManifests: Map<String, PluginManifest>): PluginFactory =
-    readParsedPlugin(parseExternalPluginDir(dir), knownManifests)
+internal fun readExternalPluginDir(
+    dir: File,
+    knownManifests: Map<String, PluginManifest>,
+    client: ExternalPluginClient = ExternalPluginClient.REACT_NATIVE,
+): PluginFactory = readParsedPlugin(parseExternalPluginDir(dir), knownManifests, client)
 
 /** [readExternalPluginDir] for a directory that is already parsed. */
 internal fun readParsedPlugin(
     parsed: ParsedExternalPlugin,
     knownManifests: Map<String, PluginManifest>,
+    client: ExternalPluginClient = ExternalPluginClient.REACT_NATIVE,
 ): PluginFactory {
     val manifest = parsed.manifest.toPluginManifest()
     val id = manifest.id
@@ -51,19 +56,26 @@ internal fun readParsedPlugin(
         }
     }
 
-    return buildExternalFactory(parsed)
+    return buildExternalFactory(parsed, client)
 }
 
-internal fun buildExternalFactory(parsed: ParsedExternalPlugin): PluginFactory {
+internal fun buildExternalFactory(
+    parsed: ParsedExternalPlugin,
+    client: ExternalPluginClient = ExternalPluginClient.REACT_NATIVE,
+): PluginFactory {
     val (dir, manifest) = parsed.dir to parsed.manifest
 
     val pluginManifest = manifest.toPluginManifest()
 
-    val scriptPath = manifest.dist?.script?.let { script ->
+    val entryName = when (client) {
+        ExternalPluginClient.REACT_NATIVE -> "script"
+        ExternalPluginClient.PHOENIX -> "phoenix"
+    }
+    val scriptPath = manifest.dist?.entryFor(client)?.let { script ->
         val file = File(dir, script)
-        file.requireInside(dir, "dist.script", script)
+        file.requireInside(dir, "dist.$entryName", script)
         if (!file.isFile) {
-            pluginLog.i("dist.script does not exist, skipping JS for ${pluginManifest.id}: $script")
+            pluginLog.i("dist.$entryName does not exist, skipping JS for ${pluginManifest.id}: $script")
             null
         } else {
             file.absolutePath

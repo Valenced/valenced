@@ -6,6 +6,7 @@ import app.valenced.plugins.PluginErrorCodes
 import app.valenced.plugins.PluginManifest
 import app.valenced.plugins.external.DiscoveryFailure
 import app.valenced.plugins.external.ExternalManifest
+import app.valenced.plugins.external.ExternalPluginClient
 import app.valenced.plugins.external.MANIFEST_FILE
 import app.valenced.plugins.external.ParsedPlugin
 import app.valenced.plugins.external.sessionSkip
@@ -31,6 +32,7 @@ internal class ExternalDiscovery(
 internal fun discoverExternalPlugins(
     dataDir: String,
     internalManifests: Map<String, PluginManifest>,
+    client: ExternalPluginClient = ExternalPluginClient.REACT_NATIVE,
 ): ExternalDiscovery {
     val failures = mutableMapOf<String, DiscoveryFailure>()
     val root = externalPluginsRoot(dataDir)
@@ -114,7 +116,7 @@ internal fun discoverExternalPlugins(
         }
 
         try {
-            result += buildExternalFactory(plugin)
+            result += buildExternalFactory(plugin, client)
         } catch (e: Throwable) {
             failed += id
             failures[id] = DiscoveryFailure(
