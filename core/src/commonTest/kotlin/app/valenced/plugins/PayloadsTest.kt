@@ -53,6 +53,12 @@ class PayloadsTest {
     }
 
     @Test
+    fun `compat only shows up on a compat plugin`() {
+        assertFalse("compat" in encode(payload))
+        assertTrue("compat" in encode(payload.copy(compat = true)))
+    }
+
+    @Test
     fun `an error keeps stack and drops absent details`() {
         val json = ValencedJson.encodeToJsonElement(PluginError(PluginErrorCodes.LOAD_FAILED, "boom")) as JsonObject
 

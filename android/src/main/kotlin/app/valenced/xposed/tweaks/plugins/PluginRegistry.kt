@@ -17,6 +17,8 @@ internal class PluginFactory(
     val internalFlags: Set<InternalPluginFlags> = emptySet(),
     /** Absolute path to the plugin's `dist.script` JS bundle. */
     val scriptPath: String? = null,
+    /** [scriptPath] is `dist.script` loaded in Phoenix, which has no `dist.phoenix` for the plugin. */
+    val compat: Boolean = false,
     /** Default provenance for a plugin when unset. */
     val defaultSource: PluginSource? = null,
     /** Loads the plugin's code, chaining the class loaders of the given dependencies. */

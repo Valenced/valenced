@@ -37,6 +37,7 @@ internal fun PluginFactory.toJSPayload(
         bootError?.let(::add)
         loaded?.let { addAll(it.scope.pluginErrors) }
     },
+    compat = compat,
 ).toNativeMap()
 
 /** Everything the plugin has thrown so far this session. */

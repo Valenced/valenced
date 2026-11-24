@@ -3,13 +3,17 @@ import {
     callNativeMethodSync,
     registerJSMethod,
 } from '@valenced/modules/native'
+import * as bytes from './bytes'
+import { evalCompatPlugin } from './compat'
 import * as gateway from './gateway'
 import * as phoenix from './index'
+import * as ui from './ui'
 import type { PhoenixPluginOptions, PhoenixPluginScope } from './types'
 
 interface NativePlugin {
     manifest: { id: string }
     script?: string | null
+    compat?: boolean
     essential?: boolean
     enabledByDefault?: boolean
 }
@@ -31,7 +35,7 @@ const settingListeners = new Map<string, Set<(value: unknown) => void>>()
 const settingValues = new Map<string, Record<string, unknown>>()
 let runtimeSlotId: string | undefined
 
-const phoenixApi = { ...phoenix, ...gateway }
+const phoenixApi = { ...phoenix, ...gateway, ui, bytes }
 
 /** Starts enabled plugins with a `dist.phoenix` artifact from the native registry. */
 export async function startExternalPhoenixPlugins() {
@@ -127,19 +131,25 @@ async function startPlugin(plugin: NativePlugin) {
     }
 
     try {
-        const module = new Function(
-            'valenced',
-            'plugin',
-            `return ${plugin.script}\n//# sourceURL=Valenced:PhoenixPlugin:${id}`,
-        )(
-            {
-                ...phoenixApi,
-                phoenix: phoenixApi,
-                callNativeMethod: scope.callNativeMethod,
-                callNativeMethodSync: scope.callNativeMethod,
-            },
-            (options: PhoenixPluginOptions) => options,
-        ) as { default?: PhoenixPluginOptions } | undefined
+        const module = plugin.compat
+            ? {
+                  default: evalCompatPlugin(plugin.script, scope, () =>
+                      stopPlugin(id),
+                  ),
+              }
+            : (new Function(
+                  'valenced',
+                  'plugin',
+                  `return ${plugin.script}\n//# sourceURL=Valenced:PhoenixPlugin:${id}`,
+              )(
+                  {
+                      ...phoenixApi,
+                      phoenix: phoenixApi,
+                      callNativeMethod: scope.callNativeMethod,
+                      callNativeMethodSync: scope.callNativeMethod,
+                  },
+                  (options: PhoenixPluginOptions) => options,
+              ) as { default?: PhoenixPluginOptions } | undefined)
 
         const options = module?.default
         if (!options || typeof options !== 'object')

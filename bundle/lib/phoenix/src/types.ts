@@ -52,8 +52,12 @@ export interface PhoenixPluginScope {
         warn(message: unknown): void
         error(message: unknown): void
     }
-    /** The same frame and gateway API exported by `@valenced/phoenix`. */
-    phoenix: typeof import('./index') & typeof import('./gateway')
+    /** The same frame and gateway API exported by `@valenced/phoenix`, with `ui` and `bytes` namespaces. */
+    phoenix: typeof import('./index') &
+        typeof import('./gateway') & {
+            ui: typeof import('./ui')
+            bytes: typeof import('./bytes')
+        }
     /** Synchronous native bridge for Phoenix host methods. */
     callNativeMethod(name: string, args?: unknown[]): unknown
     /** Persistent settings declared by this plugin's manifest. */

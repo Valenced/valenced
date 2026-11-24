@@ -69,7 +69,8 @@ internal fun buildExternalFactory(
 
     val (entryName, entry) = when (client) {
         ExternalPluginClient.REACT_NATIVE -> "script" to manifest.dist?.script
-        ExternalPluginClient.PHOENIX -> "phoenix" to manifest.dist?.phoenix
+        ExternalPluginClient.PHOENIX ->
+            manifest.dist?.phoenix?.let { "phoenix" to it } ?: ("script" to manifest.dist?.script)
     }
     val scriptPath = entry?.let { script ->
         val file = File(dir, script)
@@ -86,7 +87,9 @@ internal fun buildExternalFactory(
 
     pluginLog.i("Discovered external plugin: ${pluginManifest.id} ${pluginManifest.version}")
 
-    return PluginFactory(pluginManifest, scriptPath = scriptPath) { chain ->
+    val compat = client == ExternalPluginClient.PHOENIX && entryName == "script"
+
+    return PluginFactory(pluginManifest, scriptPath = scriptPath, compat = compat) { chain ->
         // JS-only plugin, no native body.
         if (android == null) plugin {}
         else {
