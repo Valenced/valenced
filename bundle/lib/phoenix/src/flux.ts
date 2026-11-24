@@ -1,4 +1,6 @@
+import { decodeUtf8 } from './bytes'
 import { on } from './gateway'
+import { request } from './http'
 
 export interface FluxPayload {
     type: string
@@ -68,13 +70,13 @@ const fluxEvents: Record<
             guild_id: payload.guildId,
         }),
     },
-    // Observe only. Dropping READY would break Phoenix.
+    // Observe only. Phoenix applies READY outside its gateway handlers.
     CONNECTION_OPEN: {
-        gateway: 'READY',
+        gateway: 'READY_SUPPLEMENTAL',
         toFlux: data => ({
             ...data,
             type: 'CONNECTION_OPEN',
-            sessionId: data.session_id,
+            user: currentUser,
         }),
     },
 }
@@ -132,7 +134,34 @@ export const stores: Record<
     },
 }
 
-export const isFluxEventSupported = (type: string) => type in fluxEvents
+// Client-local events, run from the HTTP requests they cause
+const localEvents = new Set(['TYPING_START_LOCAL'])
+
+export const isFluxEventSupported = (type: string) =>
+    type in fluxEvents || localEvents.has(type)
+
+/** Runs patches and listeners for a client-local event. Returns `undefined` when a patch blocks it. */
+export function dispatchLocalFlux(payload: FluxPayload) {
+    let result: FluxPayload | undefined | void = payload
+    for (const [patch, onError] of [
+        ...anyPatches,
+        ...(patches.get(payload.type) ?? []),
+    ]) {
+        try {
+            result = patch(result!)
+        } catch (error) {
+            onError(error)
+        }
+        if (!result) return
+    }
+    for (const [listener, onError] of listeners.get(payload.type) ?? [])
+        try {
+            listener(result)
+        } catch (error) {
+            onError(error)
+        }
+    return result
+}
 
 export function addFluxPatch(
     type: string | undefined,
@@ -166,9 +195,17 @@ export function removeFluxListener(
 }
 
 export function attachFlux() {
-    if (!attached++)
+    if (!attached++) {
+        request({ url: 'https://discord.com/api/v9/users/@me' }).then(
+            response => {
+                if (attached && response.status === 200)
+                    currentUser ??= JSON.parse(decodeUtf8(response.body))
+            },
+            () => {},
+        )
         detach = [
             'READY',
+            'READY_SUPPLEMENTAL',
             'GUILD_CREATE',
             'CHANNEL_CREATE',
             'CHANNEL_UPDATE',
@@ -179,6 +216,7 @@ export function attachFlux() {
             'MESSAGE_DELETE',
             'MESSAGE_DELETE_BULK',
         ].map(event => on(event, data => route(event, data)))
+    }
 
     let released = false
     return () => {

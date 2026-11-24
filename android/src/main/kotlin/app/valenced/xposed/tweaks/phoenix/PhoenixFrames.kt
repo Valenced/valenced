@@ -1,5 +1,7 @@
 package app.valenced.xposed.tweaks.phoenix
 
+import android.util.Base64
+import app.valenced.xposed.api.registerNativeAsyncMethod
 import app.valenced.xposed.api.registerNativeMethod
 import app.valenced.xposed.hook
 import app.valenced.xposed.loadClassOrNull
@@ -7,6 +9,7 @@ import app.valenced.xposed.method
 import app.valenced.xposed.phoenix.FrameVerdict
 import app.valenced.xposed.phoenix.PhoenixRuntime
 import app.valenced.xposed.tweak
+import de.robv.android.xposed.XposedBridge
 import java.lang.reflect.Modifier
 
 private const val GUEST_HOST = "com.discord.nativeapp.bridge.GuestHost"
@@ -43,13 +46,23 @@ val phoenixFrames by tweak {
                 paramTypes("byte[]")
             }
         }
+    var guestHost: Any? = null
     if (invoke == null) log.w("No GuestHost.invoke(byte[]), guest calls are not hooked")
     else invoke.hook {
         before {
+            guestHost = thisObject
             val verdict = PhoenixRuntime.invoke(args[0] as? ByteArray) ?: return@before
             if (FrameVerdict.isDrop(verdict)) result = null
             else FrameVerdict.payload(verdict)?.let { args[0] = it }
         }
+    }
+
+    // Skips the hook, so plugin requests don't reach the frame listeners again
+    if (invoke != null) registerNativeAsyncMethod("valenced.phoenix.http.invoke") { args ->
+        val host = guestHost
+        if (host == null && !Modifier.isStatic(invoke.modifiers)) throw Error("Phoenix has not sent a request yet")
+        XposedBridge.invokeOriginalMethod(invoke, host, arrayOf(Base64.decode(args[0] as String, Base64.NO_WRAP)))
+        null
     }
 
     val dispatch = dexFinder.findMethod {

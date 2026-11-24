@@ -86,6 +86,100 @@ export class FormData {
     }
 }
 
+export class URLSearchParams {
+    list: Array<[string, string]> = []
+
+    constructor(init?: unknown) {
+        if (typeof init === 'string') {
+            for (const part of init.replace(/^\?/, '').split('&')) {
+                if (!part) continue
+                const [name, ...value] = part
+                    .split('=')
+                    .map(text => decodeURIComponent(text.replaceAll('+', ' ')))
+                this.list.push([name!, value.join('=')])
+            }
+        } else {
+            const entries =
+                init instanceof URLSearchParams
+                    ? init.list
+                    : Array.isArray(init)
+                      ? init
+                      : Object.entries(init ?? {})
+            for (const [name, value] of entries)
+                this.list.push([String(name), String(value)])
+        }
+    }
+
+    get size() {
+        return this.list.length
+    }
+
+    append(name: string, value: string) {
+        this.list.push([name, String(value)])
+    }
+
+    set(name: string, value: string) {
+        this.delete(name)
+        this.append(name, value)
+    }
+
+    delete(name: string) {
+        this.list = this.list.filter(([key]) => key !== name)
+    }
+
+    get(name: string) {
+        return this.list.find(([key]) => key === name)?.[1] ?? null
+    }
+
+    getAll(name: string) {
+        return this.list
+            .filter(([key]) => key === name)
+            .map(([, value]) => value)
+    }
+
+    has(name: string) {
+        return this.list.some(([key]) => key === name)
+    }
+
+    forEach(
+        callback: (
+            value: string,
+            name: string,
+            params: URLSearchParams,
+        ) => void,
+    ) {
+        for (const [name, value] of this.list) callback(value, name, this)
+    }
+
+    entries() {
+        return this.list[Symbol.iterator]()
+    }
+
+    *keys() {
+        for (const [name] of this.list) yield name
+    }
+
+    *values() {
+        for (const [, value] of this.list) yield value
+    }
+
+    [Symbol.iterator]() {
+        return this.entries()
+    }
+
+    toString() {
+        return this.list
+            .map(pair =>
+                pair
+                    .map(text =>
+                        encodeURIComponent(text).replaceAll('%20', '+'),
+                    )
+                    .join('='),
+            )
+            .join('&')
+    }
+}
+
 class Headers {
     map = new Map<string, string>()
 

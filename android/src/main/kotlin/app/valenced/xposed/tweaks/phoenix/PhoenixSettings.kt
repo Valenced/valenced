@@ -83,6 +83,7 @@ import java.io.File
 import java.lang.ref.WeakReference
 import java.text.DateFormat
 import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -91,6 +92,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+
+private val compatUnsupported = ConcurrentHashMap<String, List<String>>()
 
 val phoenixSettings by tweak {
     var foreground = WeakReference<Activity>(null)
@@ -118,6 +121,11 @@ val phoenixSettings by tweak {
                 override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
             },
         )
+    }
+
+    registerNativeMethod("valenced.phoenix.compatUnsupported") { (id, apis) ->
+        compatUnsupported[id as String] = (apis as List<*>).map { "$it" }
+        null
     }
 
     registerNativeMethod("valenced.phoenix.openSettings") { args ->
@@ -345,6 +353,9 @@ private class PhoenixSettingsScreen(
                     manifest["icon"] as? String,
                     if (failed) SpannableString("Failed to load").apply {
                         setSpan(ForegroundColorSpan(danger), 0, length, 0)
+                    } else if (plugin["compat"] == true) buildSpannedString {
+                        color(secondary) { append("Limited in Phoenix") }
+                        if (!description.isNullOrEmpty()) append("\n$description")
                     } else description,
                     LinearLayout(ctx).apply {
                         gravity = Gravity.CENTER_VERTICAL
@@ -575,6 +586,17 @@ private class PhoenixSettingsScreen(
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         })
 
+        if (plugin["compat"] == true) section(null, icons = true, into = content) {
+            val unsupported = compatUnsupported[id].orEmpty()
+            row(
+                "Limited in Phoenix",
+                listOfNotNull(unsupported.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.removePrefix("valenced.") }),
+                icon = "CircleQuestionIcon",
+                onClick = if (unsupported.isEmpty()) null else {
+                    { copy("Unsupported APIs", unsupported.joinToString("\n")) }
+                },
+            )
+        }
         if (errors.isNotEmpty()) section(null, icons = true, into = content) {
             row("Errors", listOf("${errors.size} errors. Tap to copy."), icon = "CircleErrorIcon", tint = danger) {
                 copy("Errors", errors.joinToString("\n\n") { listOfNotNull(it["message"], it["stack"]).joinToString("\n") })

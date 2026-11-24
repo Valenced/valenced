@@ -2,11 +2,12 @@ import { existsSync, readdirSync, readFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 
-const { jsMethods, logs, files, fetches } = vi.hoisted(() => {
+const { jsMethods, logs, files, fetches, invokes } = vi.hoisted(() => {
     const jsMethods = new Map<string, (...args: any[]) => any>()
     const logs: string[] = []
     const files = new Map<string, string>()
     const fetches: unknown[][] = []
+    const invokes: Uint8Array[] = []
 
     const native = (method: string, args: any[]): unknown => {
         switch (method) {
@@ -45,6 +46,15 @@ const { jsMethods, logs, files, fetches } = vi.hoisted(() => {
                 return null
             case 'valenced.fs.delete':
                 return files.delete(args[0])
+            case 'valenced.themes.getState':
+                return '{}'
+            case 'valenced.phoenix.compatUnsupported':
+                return null
+            case 'valenced.phoenix.http.invoke':
+                invokes.push(
+                    Uint8Array.from(atob(args[0]), c => c.charCodeAt(0)),
+                )
+                return null
             case 'valenced.http.fetch':
                 fetches.push(args)
                 return {
@@ -74,7 +84,7 @@ const { jsMethods, logs, files, fetches } = vi.hoisted(() => {
         }),
     })
 
-    return { jsMethods, logs, files, fetches }
+    return { jsMethods, logs, files, fetches, invokes }
 })
 
 vi.mock('@valenced/modules/native', async importOriginal => ({
@@ -83,7 +93,9 @@ vi.mock('@valenced/modules/native', async importOriginal => ({
         jsMethods.set(name, method),
 }))
 
-import { AbortController, FormData, fetch } from './fetch'
+import { ByteReader, ByteWriter, decodeUtf8, encodeUtf8 } from './bytes'
+import { AbortController, FormData, fetch, URLSearchParams } from './fetch'
+import { request } from './http'
 import { startExternalPhoenixPlugins } from './plugins'
 
 const gateway = (event: string, data: object) =>
@@ -181,8 +193,8 @@ describe('compat host', () => {
                             ? { type: 'MESSAGE_UPDATE', message: { id: p.id } }
                             : p)
                     onFluxEventDispatched('MESSAGE_DELETE_BULK', p => ({ ...p, ids: p.ids.slice(1) }))
-                    onFluxEventDispatched('TYPING_START_LOCAL', () => {})
-                    valenced.discord.common.flux.Dispatcher.subscribe('CONNECTION_OPEN', p => { globalThis.user = Stores.UserStore.getCurrentUser().id + p.sessionId })
+                    onFluxEventDispatched('IDLE', () => {})
+                    valenced.discord.common.flux.Dispatcher.subscribe('CONNECTION_OPEN', p => { globalThis.user = Stores.UserStore.getCurrentUser().id + p.user.id })
                 },
             }`),
         )
@@ -193,6 +205,7 @@ describe('compat host', () => {
                 user: { id: 'me' },
                 guilds: [],
             }),
+            gateway('READY_SUPPLEMENTAL', { guilds: [] }),
             (globalThis as any).user,
             gateway('MESSAGE_CREATE', {
                 id: '1',
@@ -212,16 +225,15 @@ describe('compat host', () => {
 
         expect(results).toEqual([
             undefined,
-            'mes',
+            undefined,
+            'meme',
             '{"id":"1","channel_id":"c","content":"a!","author":{"id":"u"}}',
             false,
             false,
             '{"id":"2","channel_id":"c"}',
             '{"ids":["2"],"channel_id":"c"}',
         ])
-        expect(logs.join(' ')).toContain(
-            'onFluxEventDispatched("TYPING_START_LOCAL")',
-        )
+        expect(logs.join(' ')).toContain('onFluxEventDispatched("IDLE")')
         expect(globalThis.__valencedPhoenixGateway!.onEvent).toBeUndefined()
     })
 })
@@ -264,6 +276,166 @@ describe('fetch', () => {
     })
 })
 
+describe('Discord HTTP', () => {
+    const frames = globalThis.__valencedPhoenixFrames!
+    const empty = new ByteWriter().u16(4).raw(new Uint8Array(14)).toBytes()
+
+    const strings = (writer: ByteWriter, values: string[]) => {
+        writer.u8(7).i32(values.length)
+        for (const value of values) {
+            const utf8 = encodeUtf8(value)
+            writer.u8(6).i32(utf8.length).raw(utf8)
+        }
+        return writer
+    }
+
+    function guest(id: number, method: string, url: string, body = '') {
+        const struct = new ByteWriter().u8(8).i32(4).varint(161).u8(3).i32(id)
+        for (const [key, value] of [
+            [165, method],
+            [166, url],
+        ] as const) {
+            const utf8 = encodeUtf8(value)
+            struct.varint(key).u8(6).i32(utf8.length).raw(utf8)
+        }
+        struct.varint(167).u8(7).i32(2)
+        strings(struct, ['authorization', 'secret'])
+        strings(struct, ['user-agent', 'test'])
+        const bytes = struct.toBytes()
+        return new ByteWriter()
+            .u16(1)
+            .u16(0x2b)
+            .u32(0xa8)
+            .u32(7)
+            .u32(bytes.length)
+            .raw(bytes)
+            .raw(encodeUtf8(body))
+            .toBytes()
+    }
+
+    function reply(id: number, status: number, body: string) {
+        const struct = new ByteWriter()
+            .u8(8)
+            .i32(2)
+            .varint(161)
+            .u8(3)
+            .i32(id)
+            .varint(174)
+            .u8(3)
+            .i32(status)
+            .toBytes()
+        const event = new ByteWriter()
+            .u32(3)
+            .u32(0x141)
+            .u32(0)
+            .u32(struct.length)
+            .raw(struct)
+            .raw(encodeUtf8(body))
+            .toBytes()
+        return new ByteWriter()
+            .raw(empty)
+            .u32(event.length)
+            .raw(event)
+            .toBytes()
+    }
+
+    const read = (frame: Uint8Array) => {
+        const reader = new ByteReader(frame)
+        reader.raw(12)
+        const length = reader.u32()
+        return {
+            id: new DataView(frame.buffer, frame.byteOffset).getInt32(24, true),
+            struct: decodeUtf8(frame.subarray(16, 16 + length)),
+            body: decodeUtf8(frame.subarray(16 + length)),
+        }
+    }
+
+    test('sends plugin requests with the headers Phoenix sends and takes their replies', async () => {
+        const response = request({
+            method: 'POST',
+            url: 'https://discord.com/api/v9/channels/1/messages',
+            headers: {
+                'content-type': 'application/json',
+                Authorization: 'plugin',
+            },
+            body: '{"content":"x"}',
+        })
+        expect(
+            frames.onInvoke!(
+                guest(1, 'GET', 'https://discord.com/api/v9/users/@me'),
+            ),
+        ).toBeUndefined()
+        await new Promise(resolve => setTimeout(resolve))
+
+        const sent = read(
+            invokes.find(frame =>
+                decodeUtf8(frame).includes('/channels/1/messages'),
+            )!,
+        )
+        expect(sent.struct).toContain('secret')
+        expect(sent.struct).toContain('content-type')
+        expect(sent.struct).not.toContain('plugin')
+        expect(sent.body).toBe('{"content":"x"}')
+
+        expect(
+            frames.onDispatch!(0, reply(sent.id, 200, '{"id":"9"}')),
+        ).toEqual(empty)
+        const { status, body } = await response
+        expect([status, decodeUtf8(body)]).toEqual([200, '{"id":"9"}'])
+    })
+
+    test('runs compat patches on Phoenix requests', async () => {
+        await start(
+            'test.http',
+            rnPlugin(`{
+                start({ cleanup }) {
+                    const { getModules, filters } = valenced.modules.finders
+                    getModules(filters.withProps('sendMessage', 'receiveMessage'), m =>
+                        cleanup(valenced.patcher.before(m, 'sendMessage', a => { a[1].content = a[1].content.toUpperCase(); return a })))
+                    getModules(filters.withProps('HTTP', 'get'), ({ HTTP }) =>
+                        cleanup(valenced.patcher.instead(HTTP, 'get', (a, orig) =>
+                            a[0].url.startsWith('/gifs/') ? Promise.resolve({ body: [a[0].query.q] }) : orig(...a))))
+                    cleanup(valenced.discord.flux.onFluxEventDispatched('TYPING_START_LOCAL', () => undefined))
+                },
+            }`),
+        )
+
+        const sent = frames.onInvoke!(
+            guest(
+                2,
+                'POST',
+                'https://discord.com/api/v9/channels/5/messages',
+                '{"content":"hi","nonce":"1"}',
+            ),
+        ) as Uint8Array
+        const gifs = frames.onInvoke!(
+            guest(3, 'GET', 'https://discord.com/api/v9/gifs/search?q=cat+dog'),
+        )
+        const typing = frames.onInvoke!(
+            guest(4, 'POST', 'https://discord.com/api/v9/channels/5/typing'),
+        )
+        const passed = frames.onInvoke!(
+            guest(5, 'GET', 'https://discord.com/api/v9/users/@me?x=1'),
+        ) as Uint8Array
+        await new Promise(resolve => setTimeout(resolve))
+        const replies = decodeUtf8(frames.onDispatch!(0, empty) as Uint8Array)
+        await stop('test.http')
+
+        expect(read(sent).body).toBe('{"content":"HI","nonce":"1"}')
+        expect([gifs, typing]).toEqual([false, false])
+        expect(replies).toContain('["cat dog"]')
+        expect(read(passed).struct).toContain('/users/@me?x=1')
+        expect(failures('test.http')).toEqual([])
+    })
+
+    test('URLSearchParams encodes and parses forms', () => {
+        const params = new URLSearchParams({ q: 'a b', key: 'x&y' })
+        params.append('q', 'c')
+        expect(params.toString()).toBe('q=a+b&key=x%26y&q=c')
+        expect(new URLSearchParams('?q=a+b&k=1').getAll('q')).toEqual(['a b'])
+    })
+})
+
 const root =
     process.env.VALENCED_COMMUNITY_PLUGINS ??
     resolve(
@@ -279,8 +451,6 @@ const script = (dir: string) =>
     readFileSync(join(root, dir, 'build/js/index.js'), 'utf8')
 
 const knownFailures: Record<string, string> = {
-    // JSON.parse of an inert native call in preInit
-    'api.themes': 'SyntaxError',
     // stop calls a function only its React patch assigns
     'better-chat-buttons': 'o is not a function',
 }

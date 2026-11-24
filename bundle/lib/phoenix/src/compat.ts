@@ -1,9 +1,13 @@
 import * as jsonStorage from '@valenced/json-storage'
-import { callNativeMethod } from '@valenced/modules/native'
+import {
+    callNativeMethod,
+    callNativeMethodSync,
+} from '@valenced/modules/native'
 import * as patcher from '@valenced/patcher'
 import { after, before, instead } from '@valenced/patcher'
 import { noop } from '@valenced/utils/callback'
-import { AbortController, FormData, fetch } from './fetch'
+import { attachHttp, httpShims } from './compat-http'
+import { AbortController, FormData, fetch, URLSearchParams } from './fetch'
 import {
     addFluxListener,
     addFluxPatch,
@@ -36,12 +40,19 @@ export function evalCompatPlugin(
     const { id } = scope.plugin
     const used = new Set<string>()
     let started = false
+    const publish = () =>
+        callNativeMethod(
+            'valenced.phoenix.compatUnsupported' as never,
+            [id, [...used]] as never,
+        )
 
     const report = (api: string) => {
         if (used.has(api) || api.startsWith('valenced.modules.finders.filters'))
             return
         used.add(api)
-        if (started) scope.logger.warn(`Unsupported in Phoenix: ${api}`)
+        if (!started) return
+        scope.logger.warn(`Unsupported in Phoenix: ${api}`)
+        publish()
     }
 
     const describe = (value: unknown) =>
@@ -82,12 +93,21 @@ export function evalCompatPlugin(
         return proxy
     }
 
-    const finder = (path: string, result: unknown) => (filter: unknown) => {
-        report(
-            `${path}(${describe(filter).replace('valenced.modules.finders.filters.', '')})`,
-        )
-        return result
-    }
+    const finder =
+        (path: string, result: unknown) =>
+        (filter: unknown, callback?: unknown) => {
+            const key = /\.with(?:Props|Name)\("([^"]+)"/.exec(
+                describe(filter),
+            )?.[1]
+            if (key && Object.hasOwn(httpShims, key)) {
+                if (typeof callback === 'function') callback(httpShims[key])
+                return Array.isArray(result) ? [httpShims[key]] : noop
+            }
+            report(
+                `${path}(${describe(filter).replace('valenced.modules.finders.filters.', '')})`,
+            )
+            return result
+        }
 
     const self = {
         manifest: scope.plugin.manifest,
@@ -161,6 +181,33 @@ export function evalCompatPlugin(
         },
         jsonStorage,
         modules: inert('valenced.modules', {
+            // Native plugin parts load in Phoenix too, so their methods are real
+            native: inert('valenced.modules.native', {
+                callNativeMethodSync: (name: string, args: unknown[] = []) => {
+                    try {
+                        return callNativeMethodSync(
+                            name as never,
+                            args as never,
+                        )
+                    } catch {
+                        report(
+                            `valenced.modules.native.callNativeMethodSync(${JSON.stringify(name)})`,
+                        )
+                        return inert(
+                            `valenced.modules.native.callNativeMethodSync(${JSON.stringify(name)})`,
+                        )
+                    }
+                },
+                callNativeMethod: (name: string, args: unknown[] = []) =>
+                    callNativeMethod(name as never, args as never).catch(() => {
+                        report(
+                            `valenced.modules.native.callNativeMethod(${JSON.stringify(name)})`,
+                        )
+                        return inert(
+                            `valenced.modules.native.callNativeMethod(${JSON.stringify(name)})`,
+                        )
+                    }),
+            }),
             finders: inert('valenced.modules.finders', {
                 getModules: finder('valenced.modules.finders.getModules', noop),
                 waitForModules: finder(
@@ -260,6 +307,8 @@ export function evalCompatPlugin(
         'fetch',
         'FormData',
         'AbortController',
+        'URLSearchParams',
+        'crypto',
         `return ${script}\n//# sourceURL=Valenced:PhoenixCompatPlugin:${id}`,
     )(
         valenced,
@@ -267,6 +316,14 @@ export function evalCompatPlugin(
         fetch,
         FormData,
         AbortController,
+        URLSearchParams,
+        {
+            getRandomValues: (array: Uint8Array) => {
+                for (let i = 0; i < array.length; i++)
+                    array[i] = Math.floor(Math.random() * 256)
+                return array
+            },
+        },
     )?.default as CompatOptions | undefined
 
     if (!options || typeof options !== 'object')
@@ -322,7 +379,7 @@ export function evalCompatPlugin(
 
     return {
         start: async () => {
-            scope.cleanup(attachFlux())
+            scope.cleanup(attachFlux(), attachHttp())
             try {
                 if (options.jsonStorage?.load) await api.jsonStorage.get()
                 for (const lifecycle of [
@@ -333,10 +390,12 @@ export function evalCompatPlugin(
                     await lifecycle?.call(self, api)
             } finally {
                 started = true
-                if (used.size)
+                if (used.size) {
                     scope.logger.warn(
                         `Unsupported in Phoenix: ${[...used].join(', ')}`,
                     )
+                    publish()
+                }
             }
         },
         stop: () => options.stop?.call(self, api),
