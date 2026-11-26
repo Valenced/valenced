@@ -22,10 +22,7 @@ ValencedTweak_LDFLAGS = -undefined dynamic_lookup -lz
 ifneq ($(VALENCED_CORE_LIB),)
 ValencedTweak_LDFLAGS += -Wl,-force_load,$(VALENCED_CORE_LIB)
 else
-ValencedTweak_FRAMEWORKS += ValencedCore
-ValencedTweak_CFLAGS += -F$(VALENCED_CORE_FW)
-ValencedTweak_CCFLAGS += -F$(VALENCED_CORE_FW)
-ValencedTweak_LDFLAGS += -F$(VALENCED_CORE_FW) -Wl,-force_load,$(VALENCED_CORE_FW)/ValencedCore
+ValencedTweak_LDFLAGS += -Wl,-force_load,$(VALENCED_CORE_FW)/ValencedCore
 endif
 
 ifneq ($(VALENCED_BUNDLE_DIR),)
